@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                              Multi-Symbol-Indicator-Ea-v1.02.mq5 |
+//|                              Multi_Symbol_Indicator_EA.mq5       |
 //|                                     Copyright 2024, Dillon Grech |
 //|                   YouTube: https://www.youtube.com/c/DillonGrech |
 //|                           GitHub: https://github.com/DillonGrech |
