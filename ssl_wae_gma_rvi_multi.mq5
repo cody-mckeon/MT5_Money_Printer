@@ -670,15 +670,15 @@ void OnTick()
       //Individual Indicator Tester
       if((all_currency_data[i].open_signal_ssl == "Long" && all_currency_data[i].open_signal_wae == "Volume Trade" && all_currency_data[i].open_signal_gma == "Long" && all_currency_data[i].open_confirmation_rvi == "Long")||all_currency_data[i].g_continuation_trade == "Long"){
          if(g_stop_order)
-            TicketNumber = ProcessTradeOpen(ORDER_TYPE_BUY_STOP, all_currency_data[i].g_current_atr);
+            ProcessTradeOpen(ORDER_TYPE_BUY_STOP, all_currency_data[i].g_current_atr, all_currency_data[i].symbol);
          else if(g_market_order)
-            TicketNumber = ProcessTradeOpen(ORDER_TYPE_BUY, all_currency_data[i].g_current_atr);
+            ProcessTradeOpen(ORDER_TYPE_BUY, all_currency_data[i].g_current_atr, all_currency_data[i].symbol);
       } else if((all_currency_data[i].open_signal_ssl == "Short" && all_currency_data[i].open_signal_wae == "Volume Trade" && all_currency_data[i].open_signal_gma == "Short" && all_currency_data[i].open_confirmation_rvi == "Short")|| all_currency_data[i].g_continuation_trade == "Short"){
           //Reset Continuation Variables on new open
           if(g_stop_order)
-            TicketNumber = ProcessTradeOpen(ORDER_TYPE_SELL_STOP, all_currency_data[i].g_current_atr);
+            ProcessTradeOpen(ORDER_TYPE_SELL_STOP, all_currency_data[i].g_current_atr,all_currency_data[i].symbol);
          else if(g_market_order)
-            TicketNumber = ProcessTradeOpen(ORDER_TYPE_SELL, all_currency_data[i].g_current_atr);
+            ProcessTradeOpen(ORDER_TYPE_SELL, all_currency_data[i].g_current_atr, all_currency_data[i].symbol);
       } else {
          Print("SSL ",all_currency_data[i].open_signal_ssl);
          Print("RVI ",all_currency_data[i].open_confirmation_rvi);
