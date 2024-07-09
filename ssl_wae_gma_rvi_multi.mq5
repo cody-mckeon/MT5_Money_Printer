@@ -165,7 +165,7 @@ struct currencyData {
    string open_signal_ssl;
    
    int g_wae_handle[];// WAE
-   string open_signal_gma;
+   string open_signal_wae;
    
    int g_handle_gma[];// GMA
    string open_signal_gma;
@@ -609,21 +609,21 @@ void OnTick()
                      //Check bar baseline data in relation to price
                      if(price > geo_avg[j]){
                         //Crossed baseline continuation false
-                        g_continuation = false;
+                        all_currency_data[i].g_continuation = false;
                         break;
                      } else {
-                        g_continuation = true;
+                        all_currency_data[i].g_continuation = true;
                      }
                  }
                  
-                 if(g_continuation == true){
+                 if(all_currency_data[i].g_continuation == true){
                      //Check the trigger for direction
                      //Set symbol string and indicator buffers
                      g_continuation_start_candle = 0;
                      const int continuation_required_candle   = 2; //How many candles are required to be stored in Expert
      
                      double continuation_sell_ssl[]; //the lower SSL at 1
-                     CopyBuffer(g_handle_ssl[i],1,g_continuation_start_candle,continuation_required_candle,continuation_sell_ssl);
+                     CopyBuffer(all_currency_data[i].g_handle_ssl,1,g_continuation_start_candle,continuation_required_candle,continuation_sell_ssl);
               
                      //Current Candle is 1 
                      //Prior Candle is 0
@@ -631,13 +631,13 @@ void OnTick()
                      if((continuation_sell_ssl[1] != DBL_MAX))
                      {
                         Print("Sell: ", continuation_sell_ssl[1]);
-                        g_continuation_trade = "Short";
+                        all_currency_data[i].g_continuation_trade = "Short";
                         //Reset Continuation Variables on new open
                         g_continuation_candle_count = 0;
-                        g_continuation_trade = "na";
+                        all_currency_data[i].g_continuation_trade = "na";
                         g_continuation_start_candle = 0; 
                      } else {
-                        g_continuation_trade = "No continuation";
+                        all_currency_data[i].g_continuation_trade = "No continuation";
                      }  
                  }
               }
@@ -645,46 +645,46 @@ void OnTick()
        
       //Initiate String for indicatorMetrics Variable. This will reset variable each time OnTick function runs.
       string indicator_metrics = "";  
-      StringConcatenate(indicator_metrics,symbol," | Last Processed: ",TimeLastTickProcessed," | Open Ticket: ", TicketNumber);
+      StringConcatenate(indicator_metrics,symbol," | Last Processed: ",TimeLastTickProcessed);
       
       //Strategy Trigger - SSL
-      string open_signal_ssl = getSslOpenSignal(); 
-      StringConcatenate(indicator_metrics, indicator_metrics, " | SSL Bias: ", open_signal_ssl); //Concatenate indicator values to output comment for user
+      all_currency_data[i].open_signal_ssl = getSslOpenSignal(); 
+      StringConcatenate(indicator_metrics, indicator_metrics, " | SSL Bias: ", all_currency_data[i].open_signal_ssl); //Concatenate indicator values to output comment for user
       
       //Another Confirmation Trigger - RVI
-      string open_confirmation_rvi = rviConfirmation();
-      StringConcatenate(indicator_metrics, indicator_metrics, " | Confirmation Bias: ", open_confirmation_rvi); //Concatenate indicator values to output comment for user
+      all_currency_data[i].open_confirmation_rvi = rviConfirmation();
+      StringConcatenate(indicator_metrics, indicator_metrics, " | Confirmation Bias: ", all_currency_data[i].open_confirmation_rvi); //Concatenate indicator values to output comment for user
       
       //Money Management - ATR
-      g_current_atr = getAtrValue(); //Gets ATR value double using custom function - convert double to string as per symbol digits
-      StringConcatenate(indicator_metrics, indicator_metrics, " | ATR: ", g_current_atr);
+      all_currency_data[i].g_current_atr = getAtrValue(); //Gets ATR value double using custom function - convert double to string as per symbol digits
+      StringConcatenate(indicator_metrics, indicator_metrics, " | ATR: ", all_currency_data[i].g_current_atr);
            
       //Volume Filter - WAE
-      string open_signal_wae = getWaeOpenSignal(); 
-      StringConcatenate(indicator_metrics, indicator_metrics, " | WAE Bias: ", open_signal_wae); //Concatenate indicator values to output comment for user
+      all_currency_data[i].open_signal_wae = getWaeOpenSignal(); 
+      StringConcatenate(indicator_metrics, indicator_metrics, " | WAE Bias: ", all_currency_data[i].open_signal_wae); //Concatenate indicator values to output comment for user
    
       //Baseline Filter - GMA
-      string open_signal_gma = getGmaOpenSignal();  
-      StringConcatenate(indicator_metrics, indicator_metrics, " | GMA Bias: ", open_signal_gma); //Concatenate indicator values to output comment for user
+      all_currency_data[i].open_signal_gma = getGmaOpenSignal();  
+      StringConcatenate(indicator_metrics, indicator_metrics, " | GMA Bias: ", all_currency_data[i].open_signal_gma); //Concatenate indicator values to output comment for user
       
       //Individual Indicator Tester
-      if((open_signal_ssl == "Long" && open_signal_wae == "Volume Trade" && open_signal_gma == "Long" && open_confirmation_rvi == "Long")||g_continuation_trade == "Long"){
+      if((all_currency_data[i].open_signal_ssl == "Long" && all_currency_data[i].open_signal_wae == "Volume Trade" && all_currency_data[i].open_signal_gma == "Long" && all_currency_data[i].open_confirmation_rvi == "Long")||all_currency_data[i].g_continuation_trade == "Long"){
          if(g_stop_order)
-            TicketNumber = ProcessTradeOpen(ORDER_TYPE_BUY_STOP, g_current_atr);
+            TicketNumber = ProcessTradeOpen(ORDER_TYPE_BUY_STOP, all_currency_data[i].g_current_atr);
          else if(g_market_order)
-            TicketNumber = ProcessTradeOpen(ORDER_TYPE_BUY, g_current_atr);
-      } else if((open_signal_ssl == "Short" && open_signal_wae == "Volume Trade" && open_signal_gma == "Short" && open_confirmation_rvi == "Short")||g_continuation_trade == "Short"){
+            TicketNumber = ProcessTradeOpen(ORDER_TYPE_BUY, all_currency_data[i].g_current_atr);
+      } else if((all_currency_data[i].open_signal_ssl == "Short" && all_currency_data[i].open_signal_wae == "Volume Trade" && all_currency_data[i].open_signal_gma == "Short" && all_currency_data[i].open_confirmation_rvi == "Short")|| all_currency_data[i].g_continuation_trade == "Short"){
           //Reset Continuation Variables on new open
           if(g_stop_order)
-            TicketNumber = ProcessTradeOpen(ORDER_TYPE_SELL_STOP, g_current_atr);
+            TicketNumber = ProcessTradeOpen(ORDER_TYPE_SELL_STOP, all_currency_data[i].g_current_atr);
          else if(g_market_order)
-            TicketNumber = ProcessTradeOpen(ORDER_TYPE_SELL, g_current_atr);
+            TicketNumber = ProcessTradeOpen(ORDER_TYPE_SELL, all_currency_data[i].g_current_atr);
       } else {
-         Print("SSL ",open_signal_ssl);
-         Print("RVI ",open_confirmation_rvi);
-         Print("WAE ",open_signal_wae);
-         Print("GMA ",open_signal_gma);
-         Print("ATR ",g_current_atr);
+         Print("SSL ",all_currency_data[i].open_signal_ssl);
+         Print("RVI ",all_currency_data[i].open_confirmation_rvi);
+         Print("WAE ",all_currency_data[i].open_signal_wae);
+         Print("GMA ",all_currency_data[i].open_signal_gma);
+         Print("ATR ",all_currency_data[i].g_current_atr);
          Print("No Trade Signal from OnTick");
       }
       
@@ -1174,17 +1174,16 @@ double OptimalLotSize(string CurrentSymbol, double EntryPrice, double StopLoss)
 }
 
 //Processes open trades for buy and sell
-ulong ProcessTradeOpen(ENUM_ORDER_TYPE order_type, double CurrentAtr)
+void ProcessTradeOpen(ENUM_ORDER_TYPE order_type, double CurrentAtr, string current_symbol)
 {
    //Set symbol string and variables
-   string CurrentSymbol   = Symbol();  
    double Price           = 0;
    double StopLossPrice   = 0;
    double TakeProfitPrice = 0;
-   double spread = SymbolInfoDouble(CurrentSymbol, SYMBOL_ASK) - SymbolInfoDouble(CurrentSymbol, SYMBOL_BID);
+   double spread = SymbolInfoDouble(current_symbol, SYMBOL_ASK) - SymbolInfoDouble(current_symbol, SYMBOL_BID);
    
    //Get Previous Bars information for Pending Stop Orders
-   CopyRates(Symbol(), PERIOD_CURRENT, 0, 2, g_bar);
+   CopyRates(current_symbol, PERIOD_CURRENT, 0, 2, g_bar);
    double high = g_bar[1].high;
    double low = g_bar[1].low;
    
@@ -1192,52 +1191,49 @@ ulong ProcessTradeOpen(ENUM_ORDER_TYPE order_type, double CurrentAtr)
    //Get price, stop loss, take profit for open and close orders
    if(order_type == ORDER_TYPE_BUY_STOP || order_type == ORDER_TYPE_BUY)
    {
-      Price           = NormalizeDouble(SymbolInfoDouble(CurrentSymbol, SYMBOL_ASK), Digits());
+      Price           = NormalizeDouble(SymbolInfoDouble(current_symbol, SYMBOL_ASK), Digits());
       StopLossPrice   = NormalizeDouble(Price - CurrentAtr*AtrLossMulti, Digits());
       TakeProfitPrice = NormalizeDouble(Price + CurrentAtr*AtrProfitMulti, Digits());
    }
    else if(order_type == ORDER_TYPE_SELL_STOP || order_type == ORDER_TYPE_SELL)
    {
-      Price           = NormalizeDouble(SymbolInfoDouble(CurrentSymbol, SYMBOL_BID), Digits());
+      Price           = NormalizeDouble(SymbolInfoDouble(current_symbol, SYMBOL_BID), Digits());
       StopLossPrice   = NormalizeDouble(Price + CurrentAtr*AtrLossMulti, Digits());
       TakeProfitPrice = NormalizeDouble(Price - CurrentAtr*AtrProfitMulti, Digits());  
    }
    
    //Get lot size
-   double LotSize = OptimalLotSize(CurrentSymbol,Price,StopLossPrice);
-   LotSize = (int)(LotSize/SymbolInfoDouble(CurrentSymbol,SYMBOL_VOLUME_STEP)) * SymbolInfoDouble(CurrentSymbol,SYMBOL_VOLUME_STEP);
-   LotSize = MathMin(LotSize,SymbolInfoDouble(CurrentSymbol,SYMBOL_VOLUME_MAX));
-   LotSize = MathMax(LotSize,SymbolInfoDouble(CurrentSymbol,SYMBOL_VOLUME_MIN));
+   double LotSize = OptimalLotSize(current_symbol,Price,StopLossPrice);
+   LotSize = (int)(LotSize/SymbolInfoDouble(current_symbol,SYMBOL_VOLUME_STEP)) * SymbolInfoDouble(current_symbol,SYMBOL_VOLUME_STEP);
+   LotSize = MathMin(LotSize,SymbolInfoDouble(current_symbol,SYMBOL_VOLUME_MAX));
+   LotSize = MathMax(LotSize,SymbolInfoDouble(current_symbol,SYMBOL_VOLUME_MIN));
    Print("Lots Trade Open: ", LotSize);
    
    //Exit any trades that are currently open. Enter new trade.
-   Trade.PositionClose(CurrentSymbol);
+   Trade.PositionClose(current_symbol);
    
    
    if(order_type == ORDER_TYPE_BUY_STOP)
    {
-      TicketNumber = Trade.BuyStop(LotSize, high+spread, Symbol(), StopLossPrice, TakeProfitPrice, ORDER_TIME_GTC);
+      Trade.BuyStop(LotSize, high+spread, current_symbol, StopLossPrice, TakeProfitPrice, ORDER_TIME_GTC);
    }
    else if(order_type == ORDER_TYPE_SELL_STOP)
    {
-      TicketNumber = Trade.SellStop(LotSize, low-spread, Symbol(), StopLossPrice, TakeProfitPrice, ORDER_TIME_GTC);
+      Trade.SellStop(LotSize, low-spread, current_symbol, StopLossPrice, TakeProfitPrice, ORDER_TIME_GTC);
    } else {
       //For Market Orders
-      TicketNumber = Trade.PositionOpen(CurrentSymbol,order_type,LotSize,Price,StopLossPrice,TakeProfitPrice,InpTradeComment);
+      Trade.PositionOpen(current_symbol,order_type,LotSize,Price,StopLossPrice,TakeProfitPrice,InpTradeComment);
       //Used for market order
       //Get Position Ticket Number
-      PositionSelect(Symbol());
-      ulong  Ticket = PositionGetTicket(0);
+      //PositionSelect(current_symbol);
+      //ulong  Ticket = PositionGetTicket(0);
    }
    
    //Add in any error handling
-   Print("Trade Processed For ", CurrentSymbol," OrderType ",order_type, " Lot Size ", LotSize, " Current Atr: ", CurrentAtr," Ticket: ", PositionGetTicket(0));
+   Print("Trade Processed For ", CurrentSymbol," OrderType ",order_type, " Lot Size ", LotSize, " Current Atr: ", CurrentAtr);
    Print("Volume ", PositionGetDouble(POSITION_VOLUME));
    Print("Close Volume ", PositionGetDouble(POSITION_VOLUME) / 2);
    Print("Minimum Volume ", SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MIN));
-
-   // Return ticket number
-   return(TicketNumber);
 }
 
 //+-------------------------------------------------------------------------------------
@@ -1450,4 +1446,3 @@ bool checkSufficientMargin(string symbol, double volume){
       return false;
    }
 }
-
