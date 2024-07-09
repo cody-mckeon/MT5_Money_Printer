@@ -154,16 +154,31 @@ struct DateRange {
 };
 
 //+------------------------------------------------------+
-//| Structure to hole indicator data for a currency pair +
+//| Structure to hold indicator data for a currency pair +
 //+------------------------------------------------------+
 struct currencyData {
    string symbol;
-   // ATR
-   // SSL
-   // WAE
-   // GMA
-   // RVI
+   int atr_handle[]; // ATR
+   double g_current_atr;
+   
+   int g_handle_ssl[]; // SSL
+   string open_signal_ssl;
+   
+   int g_wae_handle[];// WAE
+   string open_signal_gma;
+   
+   int g_handle_gma[];// GMA
+   string open_signal_gma;
+   
+   int g_handle_rvi[];// RVI
+   string open_confirmation_rvi;
+   
+   int g_order_type; // The Order Type
+   bool g_continuation = true; // For Continuation Trades
+   string g_continuation_trade = "na";
 }
+
+currencyData all_currency_data[];
 
 
 //Setup Variables
@@ -184,13 +199,13 @@ int             TicksProcessedCount = 0; //Counts the number of ticks proceeded 
 static datetime TimeLastTickProcessed;   //Stores the last time a tick was processed based off candle opens only
 int          g_partial_close = 0;
 MqlRates    g_bar[];
-int         g_order_type;
+
 
 //Continuation Trades
 int g_continuation_trade_direction;
-bool g_continuation = true;   
+  
 int g_continuation_candle_count = 0;
-string g_continuation_trade = "na";
+
 int g_continuation_start_candle = 0; 
 
 //Scaling out variables
@@ -211,26 +226,26 @@ double g_sell_difference;
 double g_close_volume;
 
 //Confirmation Ssl Handle and Variables
-int g_handle_ssl[];
+
 string g_ssl_name = ""; 
 
 //Volume Wae Handle and Variables
-int g_wae_handle[];
+
 string g_wae_name = "";
 
 //Baseline GMA Handle and Variables
-int g_handle_gma[];
+
 string g_gma_name = "";
 
 //Exit RVI Handle and Variables
-int g_handle_rvi[];
+
 string g_rvi_name = "";
 input bool g_rvi_exit = true; //Use the exit?
 
 //ATR Handle and Variables
-int atr_handle[];
+
 int atr_period  = 10;
-double g_current_atr; 
+ 
 
 //Risk Metrics
 input double AtrLossMulti      = 1.0;    //ATR Loss Multiple
@@ -389,56 +404,63 @@ int OnInit()
       Trade.SetExpertMagicNumber(InpMagicNumber);
          
       ArraySetAsSeries(g_bar, true); //For Appending to the end of the array
-      ArrayResize(atr_handle, ArraySize(currency_pairs));
       
+      
+      ArrayResize(all_currency_data, ArraySize(currency_pairs));
+      
+      // Initialize currency structure with all pairs
       for(int i = 0; i < ArraySize(currency_pairs); i++){
-         // Set up handle for ATR indicator on the initialisation of expert
-         atr_handle[i] = iATR(currency_pairs[i],Period(),atr_period);
+         all_currency_data[i].symbol = currency_pairs[i];
+      }
+      
+      // Set up handle for ATR indicator on the initialisation of expert
+      for(int i = 0; i < ArraySize(currency_pairs); i++){
+         all_currency_data[i].atr_handle = iATR(currency_pairs[i],Period(),atr_period);
          Print("Handle for ATR /", Symbol()," / ", EnumToString(Period()),"successfully created");
          //Error Handling
-         if(atr_handle[i] == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");  
+         if(all_currency_data[i].atr_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");  
       }
       
+      // Setup up handle for ssl indicator on the oninit
       for(int i = 0; i < ArraySize(currency_pairs); i++){
-         //Setup up handle for ssl indicator on the oninit
          g_ssl_name = "Market\\ssl.ex5";
-         g_handle_ssl[i] = iCustom(currency_pairs[i],Period(),g_ssl_name,13,true,0);
+         all_currency_data[i].g_handle_ssl = iCustom(currency_pairs[i],Period(),g_ssl_name,13,true,0);
          Print("Handle for SSL /", Symbol()," / ", EnumToString(Period()),"successfully created");
          //Error Handling
-         if(g_handle_ssl[i] == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+         if(all_currency_data[i].g_handle_ssl == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
       }
       
+      // Setup handle for Waddah Attar Explosion on the OnInit
       for(int i = 0; i < ArraySize(currency_pairs); i++){
-         //Setup handle for Waddah Attar Explosion on the OnInit
          g_wae_name = "Market\\waddah_attar_explosion.ex5";
-         g_wae_handle[i] = iCustom(currency_pairs[i], Period(), g_wae_name,20,40,20,2.0,150,400,15,150,false,2,false,false,false,false);
+         all_currency_data[i].g_wae_handle = iCustom(currency_pairs[i], Period(), g_wae_name,20,40,20,2.0,150,400,15,150,false,2,false,false,false,false);
          Print("Handle for WAE /", Symbol()," / ", EnumToString(Period()),"successfully created");
          //Error Handling
-         if(g_wae_handle[i] == INVALID_HANDLE) {
+         if(all_currency_data[i].g_wae_handle == INVALID_HANDLE) {
             Print(__FUNCTION__, " > Handle is invalid...Check the name!");
             return(INIT_FAILED);
          }
       } 
    
+      // Setup handle for Geometric Mean Average on the OnInit
       for(int i = 0; i < ArraySize(currency_pairs); i++){
-         //Setup handle for Geometric Mean Average on the OnInit
          g_gma_name = "Market\\YGMA.ex5";
-         g_handle_gma[i] = iCustom(currency_pairs[i], Period(), g_gma_name,5,12);
+         all_currency_data[i].g_handle_gma = iCustom(currency_pairs[i], Period(), g_gma_name,5,12);
          Print("Handle for GMA /", Symbol()," / ", EnumToString(Period()),"successfully created");
          //Error Handling
-         if(g_handle_gma[i] == INVALID_HANDLE) {
+         if(all_currency_data[i].g_handle_gma == INVALID_HANDLE) {
             Print(__FUNCTION__, " > Handle is invalid...Check the name!");
             return(INIT_FAILED);
          }
       }
  
+      // Setup handle for Relative Vigor Index on the OnInit
       for(int i = 0; i < ArraySize(currency_pairs); i++){
-         //Setup handle for Relative Vigor Index on the OnInit
          g_rvi_name = "Market\\rvi.ex5";
-         g_handle_rvi[i] = iCustom(currency_pairs[i], Period(), g_rvi_name,10);
+         all_currency_data[i].g_handle_rvi = iCustom(currency_pairs[i], Period(), g_rvi_name,10);
          Print("Handle for RVI /", Symbol()," / ", EnumToString(Period()),"successfully created");
          //Error Handling
-         if(g_handle_rvi[i] == INVALID_HANDLE) {
+         if(all_currency_data[i].g_handle_rvi == INVALID_HANDLE) {
             Print(__FUNCTION__, " > Handle is invalid...Check the name!");
             return(INIT_FAILED);
          }
@@ -474,11 +496,12 @@ void OnTick()
    //Reset
    g_trading_switch = true;
    
+   // Set Trading Switch based on Volatility day and Risk Exposure
    if(isNoTradeDay(g_no_trade_periods, g_no_trade_period_count, current_tick_date)){
       Print("Today is a no-trade day due to significant volatility");
       g_trading_switch = false; //Set No Trade Switch
    } else {
-      g_trading_switch = true; //Set to trade
+      g_trading_switch = true; //Set Yes to Trade Switch
       //Calculate current risk exposure
       double current_risk_percentage = calculateCurrentRiskExposure();
    
@@ -492,46 +515,47 @@ void OnTick()
    
    //Declare Variables     
    TicksReceivedCount++; //Counts the number of ticks received
-            
-   //Checks for new candle
-   bool is_new_candle = false;
-   if(TimeLastTickProcessed != iTime(Symbol(),Period(),0))
-   {
-      is_new_candle = true;
-      TimeLastTickProcessed=iTime(Symbol(),Period(),0);
-   }
    
-   //If there is a new candle, process any trades
-   if(is_new_candle == true && g_trading_switch == true)
-   {
-      //Output the date of the bar
-      datetime current_bar_time = iTime(_Symbol, PERIOD_CURRENT,0);
-      //Convert string to output
-      string time_str = TimeToString(current_bar_time, TIME_DATE | TIME_MINUTES);
-      Print("Current bar date and time: ", time_str);
+   // Start looping through the currency pairs and apply strategy
+   for (int i = 0; i < ArraySize(currency_pairs); i++){ 
+      string symbol = currency_pairs[i];        
+      //Checks for new candle
+      bool is_new_candle = false;
+      if(TimeLastTickProcessed != iTime(symbol,Period(),0))
+      {
+         is_new_candle = true;
+         TimeLastTickProcessed=iTime(symbol,Period(),0);
+      }
+   
+      //If there is a new candle, process any trades
+      if(is_new_candle == true && g_trading_switch == true)
+      {
+         //Output the date of the bar
+         datetime current_bar_time = iTime(symbol, PERIOD_CURRENT,0);
+         //Convert string to output
+         string time_str = TimeToString(current_bar_time, TIME_DATE | TIME_MINUTES);
+         Print("Current bar date and time: ", time_str);
       
-      //Counts the number of ticks processed
-      TicksProcessedCount++;
-      
-      // Iterate over each currency pair and apply trading logic
-      for (int i = 0; i < ArraySize(currency_pairs); i++){
-         string symbol = currency_pairs[i];
+         //Counts the number of ticks processed
+         TicksProcessedCount++;
          
          // Calculate the lot size for the current symbol based on available risk
          // Check if position is still open and or executed. If not open and or executed, return 0.
          // Difference between a pending order and an executed / open order
+         // A Continuation trade states that a trade has happened in the past and there
+         // was no crossing of the base line. 
          if (!PositionSelect(symbol) && (!OrderSelect(OrderGetTicket(i)))) 
-         {
-            //Set the Global Variable to indicate partial close
+         {            
+            // Set the Global Variable to indicate partial close
             g_partial_close = 0;
-            //Continuation check baseline
+            // Continuation check baseline
             if(g_continuation_trade_direction == ORDER_TYPE_BUY){
                //Get in trade candle count past baseline data
                //Set symbol string and indicator buffers
                g_continuation_start_candle = 0;
                //Get the Buffer Data for Baseline
                double geo_avg[];
-               CopyBuffer(g_handle_gma[i],0,g_continuation_start_candle,g_continuation_candle_count,geo_avg);
+               CopyBuffer(all_currency_data[i].g_handle_gma,0,g_continuation_start_candle,g_continuation_candle_count,geo_avg);
                //Set array as series so bar 0 is current bar
                ArraySetAsSeries(geo_avg, true);
                double price = iClose(symbol, Period(), 1);
@@ -540,14 +564,14 @@ void OnTick()
                   //Check bar baseline data in relation to price
                   if(price < geo_avg[j]){
                      //Crossed baseline continuation false
-                     g_continuation = false;
+                     all_currency_data[i].g_continuation = false;
                      break;
                   } else {
-                     g_continuation = true;
+                     all_currency_data[i].g_continuation = true;
                   }
                }
                
-               if(g_continuation == true){
+               if(all_currency_data[i].g_continuation == true){
                   // Check the trigger for direction
                   // Set symbol string and indicator buffers
                   g_continuation_start_candle = 0;
@@ -555,19 +579,19 @@ void OnTick()
                   const int continuation_required_candle = 2;
                   //the upper SSL at 0
                   double continuation_buy_ssl[]; 
-                  CopyBuffer(g_handle_ssl[i],0,g_continuation_start_candle,continuation_required_candle,continuation_buy_ssl);
+                  CopyBuffer(all_currency_data[i].g_handle_ssl,0,g_continuation_start_candle,continuation_required_candle,continuation_buy_ssl);
                   // Current Candle is 1 
                   // Prior Candle is 0
                   // Compare the value to see if there is a value for the buy or sell ssl
                   if((continuation_buy_ssl[1] != DBL_MAX)){ 
                      Print("Buy: ", continuation_buy_ssl[1]);
-                     g_continuation_trade = "Long";
+                     all_currency_data[i].g_continuation_trade = "Long";
                      // Reset Continuation Variables on new open
                      g_continuation_candle_count = 0;
-                     g_continuation_trade = "na";
+                     all_currency_data[i].g_continuation_trade = "na";
                      g_continuation_start_candle = 0;    
                   } else {
-                     g_continuation_trade = "No Continuation";
+                     all_currency_data[i].g_continuation_trade = "No Continuation";
                   }
                }   
               } else if(g_continuation_trade_direction == ORDER_TYPE_SELL){
@@ -576,7 +600,7 @@ void OnTick()
                   g_continuation_start_candle = 0;
                   // Get the Buffer Data 
                   double geo_avg[];
-                  CopyBuffer(g_handle_gma[i],0,g_continuation_start_candle,g_continuation_candle_count,geo_avg);
+                  CopyBuffer(all_currency_data[i].g_handle_gma,0,g_continuation_start_candle,g_continuation_candle_count,geo_avg);
                   // Set array as series so bar 0 is current bar
                   ArraySetAsSeries(geo_avg, true);
                   double price = iClose(symbol, Period(), 1);
@@ -747,6 +771,7 @@ void OnTick()
             "Symbols Traded: \n\r", 
             Symbol());
   }
+ 
 //+------------------------------------------------------------------+
 //+------------------------------------------------------------------+
 //| Custom function                                                  |
@@ -1425,3 +1450,4 @@ bool checkSufficientMargin(string symbol, double volume){
       return false;
    }
 }
+
