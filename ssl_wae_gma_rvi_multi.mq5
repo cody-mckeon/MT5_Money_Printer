@@ -134,6 +134,13 @@
 //| Patch notes 13
 //|   I want to clean up the different currency pair data into structs clean up OnTick into multiple functions
 //|   It is a more flexible and robust way to handle this. 
+
+//| Patch Notes 14
+//|   Going to switch to classes from structs.
+//|   To get encpasulation with classess and allow methods within the class to manage data
+//|   Making the code more manageable.
+//|   1. Bundling the data and methods to manipulate the data within a class. Data is safe.
+//|   2. Getter and Setter Methods to Provide controlled access to the attributes
 //+------------------------------------------------------------------+
 #property copyright "Cody McKeon"
 #property link      "https://www.mql5.com"
@@ -179,6 +186,8 @@ struct currencyData {
 }
 
 currencyData all_currency_data[];
+
+// Class for the currency indicator data and position information
 
 
 //Setup Variables
@@ -688,16 +697,14 @@ void OnTick()
          Print("No Trade Signal from OnTick");
       }
       
-      PositionSelect(Symbol());
+      PositionSelect(all_currency_data[i].symbol);
       //Adjust Open Positions - Trailing Stop Loss
-      if(TslCheck == true && (SymbolInfoDouble(Symbol(), SYMBOL_ASK) > PositionGetDouble(POSITION_PRICE_OPEN)) || SymbolInfoDouble(Symbol(), SYMBOL_BID) < PositionGetDouble(POSITION_PRICE_OPEN))
-         AdjustTsl(PositionGetTicket(0), g_current_atr, AtrLossMulti);
-         
+      if(TslCheck == true && (SymbolInfoDouble(all_currency_data[i].symbol, SYMBOL_ASK) > PositionGetDouble(POSITION_PRICE_OPEN)) || SymbolInfoDouble(all_currency_data[i].symbol, SYMBOL_BID) < PositionGetDouble(POSITION_PRICE_OPEN))
+         AdjustTsl(PositionGetInteger(POSITION_TICKET), all_currency_data[i].g_current_atr, AtrLossMulti);
       
-    
-   
-   //Exit Order if the RVI crosses 
-   if(g_rvi_exit == true) 
+           
+      //Exit Order if the RVI crosses 
+      if(g_rvi_exit == true) 
          rviExitOrder(OrderGetInteger(ORDER_TICKET));
          
    //Scaling out Strategy. Take profit at ATR * Profit Multiple and place at break even. Check on every tick.
