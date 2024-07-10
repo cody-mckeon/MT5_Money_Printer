@@ -163,7 +163,7 @@ struct DateRange {
 //+------------------------------------------------------+
 //| Structure to hold indicator data for a currency pair +
 //+------------------------------------------------------+
-struct currencyData {
+/*struct currencyData {
    string symbol;
    int atr_handle[]; // ATR
    double g_current_atr;
@@ -185,10 +185,78 @@ struct currencyData {
    string g_continuation_trade = "na";
 }
 
-currencyData all_currency_data[];
+currencyData all_currency_data[];*/
+//ATR Handle and Variables
+int g_atr_period  = 10;
 
 // Class for the currency indicator data and position information
+class CurrencyData {
+   private:
+      string symbol;
+      int atr_handle[]; // ATR
+      double g_current_atr;
+   
+      int ssl_handle[]; // SSL
+      string open_signal_ssl;
+   
+      int wae_handle[];// WAE
+      string open_signal_wae;
+   
+      int gma_handle[];// GMA
+      string open_signal_gma;
+   
+      int rvi_handle[];// RVI
+      string open_signal_rvi;
+   
+      int g_order_type; // The Order Type
+      bool g_continuation = true; // For Continuation Trades
+      string g_continuation_trade = "na";
+      
+      
+    
+    public:
+      // Constructor
+      currencyInitialize(string sym, int atr_hand, double atr, 
+               int ssl_hand, double ssl, 
+               int wae_hand, double wae, 
+               int gma_hand, double gma, 
+               int rvi_hand, double rvi,
+               int order_type, bool continuation, string continuation_trade){
+               
+                  symbol = sym;
+                  atr_handle = atr_hand;
+                  ssl_handle = ssl_hand;
+                  open_signal_ssl = ssl;
+                  wae_handle = wae_hand;
+                  open_signal_wae = wae
+                  gma_handle = gma_hand;
+                  open_signal_gma = gma;
+                  rvi_handle = rvi_hand;
+                  open_signal_rvi = rvi;
+                  g_order_type = order_type;
+                  g_continuation = continuation;
+                  g_continuation_trade = continuation_trade;
+           
+               }  
+               
+       // Initialize Indicator Handles
+       void InitIndicatorHandles(){
+         //Atr Handle
+         atr_handle = iATR(symbol,PERIOD_D1,g_atr_period);
+         Print("Handle for ATR /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+         //Error Handling
+         if(atr_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+       } 
+       
+       //Check Continuation Trade Logic
+       bool CheckForContinuationTrade(){
+         
+       }
+      
+}
 
+// Array to hold currency data object 
+currencyData currencies[];
 
 //Setup Variables
 input int                InpMagicNumber  = 2000001;     //Unique identifier for this expert advisor
@@ -251,9 +319,7 @@ string g_gma_name = "";
 string g_rvi_name = "";
 input bool g_rvi_exit = true; //Use the exit?
 
-//ATR Handle and Variables
 
-int atr_period  = 10;
  
 
 //Risk Metrics
@@ -398,7 +464,7 @@ string currency_pairs[] = {
 
 DateRange g_no_trade_periods[];
 int g_no_trade_period_count;
-bool g_trading_switch = true;
+bool g_volatility_switch = true;
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -413,23 +479,30 @@ int OnInit()
       Trade.SetExpertMagicNumber(InpMagicNumber);
          
       ArraySetAsSeries(g_bar, true); //For Appending to the end of the array
+      ArrayResize(currencies, ArraySize(currency_pairs));
       
+      //Initialize currencies object
+      for(int i = 0; i < ArraySize(currency_pairs); i++){
+         // Initialize symbols
+         currencies[i] = new CurrencyData(currency_pairs[i]);
+         // Initialize indicator handles
+         
+      }
       
-      ArrayResize(all_currency_data, ArraySize(currency_pairs));
-      
+      /*
       // Initialize currency structure with all pairs
       for(int i = 0; i < ArraySize(currency_pairs); i++){
          all_currency_data[i].symbol = currency_pairs[i];
-      }
-      
+      }*/
+      /*
       // Set up handle for ATR indicator on the initialisation of expert
       for(int i = 0; i < ArraySize(currency_pairs); i++){
          all_currency_data[i].atr_handle = iATR(currency_pairs[i],Period(),atr_period);
          Print("Handle for ATR /", Symbol()," / ", EnumToString(Period()),"successfully created");
          //Error Handling
          if(all_currency_data[i].atr_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");  
-      }
-      
+      }*/
+      /*
       // Setup up handle for ssl indicator on the oninit
       for(int i = 0; i < ArraySize(currency_pairs); i++){
          g_ssl_name = "Market\\ssl.ex5";
@@ -474,7 +547,7 @@ int OnInit()
             return(INIT_FAILED);
          }
       }
-      
+      */
       return(INIT_SUCCEEDED);
   }
 //+------------------------------------------------------------------+
@@ -484,12 +557,9 @@ void OnDeinit(const int reason)
   {
       //TEMPLATE
       //Remove indicator handle from Metatrader Cache
-      //IndicatorRelease(HandleMacd);
-      IndicatorRelease(atr_handle);
-      IndicatorRelease(g_handle_ssl);
-      IndicatorRelease(g_wae_handle);
-      IndicatorRelease(g_handle_gma);
-      IndicatorRelease(g_handle_rvi);
+      for (int i = 0; i < ArraySize(currencies); i++){
+         delete currencies[i];
+      }
       Print("Handle Released");
   }
 //+------------------------------------------------------------------+
@@ -503,14 +573,14 @@ void OnTick()
    //Get the current date of the tick
    datetime current_tick_date = TimeCurrent();
    //Reset
-   g_trading_switch = true;
+   g_volatility_switch = true;
    
    // Set Trading Switch based on Volatility day and Risk Exposure
    if(isNoTradeDay(g_no_trade_periods, g_no_trade_period_count, current_tick_date)){
       Print("Today is a no-trade day due to significant volatility");
-      g_trading_switch = false; //Set No Trade Switch
+      g_volatility_switch = false; //Set No Trade Switch
    } else {
-      g_trading_switch = true; //Set Yes to Trade Switch
+      g_volatility_switch = true; //Set Yes to Trade Switch
       //Calculate current risk exposure
       double current_risk_percentage = calculateCurrentRiskExposure();
    
@@ -518,29 +588,28 @@ void OnTick()
       double available_risk_percentage = MaxLossPrc - current_risk_percentage;
       if(available_risk_percentage <= 0.5){
          Print("No available risk capacity. Skipping trade.");
-         g_trading_switch = false; 
+         g_volatility_switch = false; 
       }
    }
    
    //Declare Variables     
    TicksReceivedCount++; //Counts the number of ticks received
    
-   // Start looping through the currency pairs and apply strategy
-   for (int i = 0; i < ArraySize(currency_pairs); i++){ 
-      string symbol = currency_pairs[i];        
+   // Start looping through the currency pairs and apply strategy to look for trades
+   for (int i = 0; i < ArraySize(currencies); i++){       
       //Checks for new candle
       bool is_new_candle = false;
-      if(TimeLastTickProcessed != iTime(symbol,Period(),0))
+      if(TimeLastTickProcessed != iTime(currencies[i].symbol,PERIOD_D1,0))
       {
          is_new_candle = true;
-         TimeLastTickProcessed=iTime(symbol,Period(),0);
+         TimeLastTickProcessed=iTime(currencies[i].symbol,PERIOD_D1,0);
       }
-   
+      
       //If there is a new candle, process any trades
-      if(is_new_candle == true && g_trading_switch == true)
+      if(is_new_candle == true && g_volatility_switch == true)
       {
          //Output the date of the bar
-         datetime current_bar_time = iTime(symbol, PERIOD_CURRENT,0);
+         datetime current_bar_time = iTime(currencies[i].symbol, PERIOD_D1,0);
          //Convert string to output
          string time_str = TimeToString(current_bar_time, TIME_DATE | TIME_MINUTES);
          Print("Current bar date and time: ", time_str);
@@ -548,9 +617,6 @@ void OnTick()
          //Counts the number of ticks processed
          TicksProcessedCount++;
          
-         // Calculate the lot size for the current symbol based on available risk
-         // Check if position is still open and or executed. If not open and or executed, return 0.
-         // Difference between a pending order and an executed / open order
          // A Continuation trade states that a trade has happened in the past and there
          // was no crossing of the base line. 
          if (!PositionSelect(symbol) && (!OrderSelect(OrderGetTicket(i)))) 
