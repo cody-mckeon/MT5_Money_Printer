@@ -193,70 +193,156 @@ int g_atr_period  = 10;
 class CurrencyData {
    private:
       string symbol;
-      int atr_handle[]; // ATR
-      double g_current_atr;
-   
-      int ssl_handle[]; // SSL
+      int    atr_handle;    // ATR
+      double atr_buffer[];  //[prior,current confirmed,not confirmed]
+   /*
+      int ssl_handle; // SSL
       string open_signal_ssl;
+      string g_ssl_name = ""; 
    
-      int wae_handle[];// WAE
+      int wae_handle;// WAE
       string open_signal_wae;
+      string g_wae_name = "";
    
-      int gma_handle[];// GMA
+      int gma_handle;// GMA
       string open_signal_gma;
+      string g_gma_name = "";
    
-      int rvi_handle[];// RVI
+      int rvi_handle;// RVI
       string open_signal_rvi;
+      string g_rvi_name = "";
    
       int g_order_type; // The Order Type
       bool g_continuation = true; // For Continuation Trades
       string g_continuation_trade = "na";
-      
+      */
       
     
     public:
       // Constructor
-      currencyInitialize(string sym, int atr_hand, double atr, 
-               int ssl_hand, double ssl, 
-               int wae_hand, double wae, 
-               int gma_hand, double gma, 
-               int rvi_hand, double rvi,
-               int order_type, bool continuation, string continuation_trade){
-               
-                  symbol = sym;
-                  atr_handle = atr_hand;
-                  ssl_handle = ssl_hand;
-                  open_signal_ssl = ssl;
-                  wae_handle = wae_hand;
-                  open_signal_wae = wae
-                  gma_handle = gma_hand;
-                  open_signal_gma = gma;
-                  rvi_handle = rvi_hand;
-                  open_signal_rvi = rvi;
-                  g_order_type = order_type;
-                  g_continuation = continuation;
-                  g_continuation_trade = continuation_trade;
+      CurrencyData(string sym){
+         symbol = sym;
+         atr_handle = INVALID_HANDLE;
+         ArraySetAsSeries(atr_buffer, true); // Treat array as series
+                  //ssl_handle = INVALID_HANDLE;
+                  //open_signal_ssl = "No Trade";
+                  //wae_handle = INVALID_HANDLE;
+                  //open_signal_wae = "No Trade"
+                  //gma_handle = INVALID_HANDLE;
+                  //open_signal_gma = "No Trade";
+                 //rvi_handle = INVALID_HANDLE;
+                  //open_signal_rvi = "No Trade";
+                  //g_order_type
+                  //g_continuation = continuation;
+                  //g_continuation_trade = continuation_trade;
            
                }  
                
        // Initialize Indicator Handles
+       // In Object Oriented Programs, The public members of a class can access the private members
        void InitIndicatorHandles(){
-         //Atr Handle
+         //********************
+         //|   ATR Handle     |
+         //********************
          atr_handle = iATR(symbol,PERIOD_D1,g_atr_period);
          Print("Handle for ATR /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
          //Error Handling
          if(atr_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+         /*
+         //********************
+         //|   SSL Handle     |
+         //********************
+         g_ssl_name = "Market\\ssl.ex5";
+         ssl_handle = iCustom(symbol,PERIOD_D1,g_ssl_name,13,true,0);
+         Print("Handle for SSL /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+         //Error Handling
+         if(ssl_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+         
+         //********************
+         //|   WAE HANDLE     |
+         //********************
+         g_wae_name = "Market\\waddah_attar_explosion.ex5";
+         wae_handle = iCustom(symbol, PERIOD_D1, g_wae_name,20,40,20,2.0,150,400,15,150,false,2,false,false,false,false);
+         Print("Handle for WAE /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+         //Error Handling
+         if(wae_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+         
+         
+         //********************
+         //|   GMA HANDLE     |
+         //********************
+         g_gma_name = "Market\\YGMA.ex5";
+         gma_handle = iCustom(symbol, PERIOD_D1, g_gma_name,5,12);
+         Print("Handle for GMA /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+         //Error Handling
+         if(gma_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+            
+         
+         //********************
+         //|   RVI HANDLE     |
+         //********************
+         g_rvi_name = "Market\\rvi.ex5";
+         rvi_handle = iCustom(symbol, PERIOD_D1, g_rvi_name,10);
+         Print("Handle for RVI /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+         //Error Handling
+         if(rvi_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+                
        } 
+       */
        
+       //Function to update indicators
+       void updateIndicators(){
+         //******************
+         //|      ATR       | 
+         //******************
+         if(atr_handle != INVALID_HANDLE){
+            //Set symbol string and indicator buffer
+            const int start_candle     = 0;
+            const int required_candles = 3; //How many candles are required to be stored in Expert 
+
+            //Indicator Variables and Buffers
+            const int index_atr        = 0; //ATR Value
+            
+
+            //Populate buffers for ATR Value; check errors
+            bool fill_atr = CopyBuffer(atr_handle,index_atr,start_candle,required_candles,atr_buffer); //Copy buffer uses oldest as 0 (reversed)
+            if(fill_atr==false) Print("Error creating ATR handle for symbol: ", symbol, " Error: ", GetLastError());
+
+             //Find ATR Value for Candle '1' Only
+             //double current_atr   = NormalizeDouble(atr_buffer[1],5);
+         }
+         
+         //******************
+         //|                | 
+         //******************
+         
+         
+       }
+       
+       // Get the ATR Value
+       double getAtr(int shift){
+         if(shift < ArraySize(atr_buffer)) return atr_buffer[shift];
+         else {
+            Print("Invalid shift value for ATR: ", shift);
+            return 0.0;
+         }
+       }
+       
+       // Get the Symbol 
+       string getSymbol(){
+         return symbol;
+       }
+       
+       /*
        //Check Continuation Trade Logic
        bool CheckForContinuationTrade(){
          
-       }
+       }*/
       
 }
 
 // Array to hold currency data object 
-currencyData currencies[];
+CurrencyData currencies[];
 
 //Setup Variables
 input int                InpMagicNumber  = 2000001;     //Unique identifier for this expert advisor
@@ -302,25 +388,7 @@ double g_sell_difference;
 //close half of the position
 double g_close_volume;
 
-//Confirmation Ssl Handle and Variables
-
-string g_ssl_name = ""; 
-
-//Volume Wae Handle and Variables
-
-string g_wae_name = "";
-
-//Baseline GMA Handle and Variables
-
-string g_gma_name = "";
-
-//Exit RVI Handle and Variables
-
-string g_rvi_name = "";
 input bool g_rvi_exit = true; //Use the exit?
-
-
- 
 
 //Risk Metrics
 input double AtrLossMulti      = 1.0;    //ATR Loss Multiple
@@ -486,68 +554,10 @@ int OnInit()
          // Initialize symbols
          currencies[i] = new CurrencyData(currency_pairs[i]);
          // Initialize indicator handles
-         
+         // For this symbol 
+         currencies[i].InitIndicatorHandles();
       }
       
-      /*
-      // Initialize currency structure with all pairs
-      for(int i = 0; i < ArraySize(currency_pairs); i++){
-         all_currency_data[i].symbol = currency_pairs[i];
-      }*/
-      /*
-      // Set up handle for ATR indicator on the initialisation of expert
-      for(int i = 0; i < ArraySize(currency_pairs); i++){
-         all_currency_data[i].atr_handle = iATR(currency_pairs[i],Period(),atr_period);
-         Print("Handle for ATR /", Symbol()," / ", EnumToString(Period()),"successfully created");
-         //Error Handling
-         if(all_currency_data[i].atr_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");  
-      }*/
-      /*
-      // Setup up handle for ssl indicator on the oninit
-      for(int i = 0; i < ArraySize(currency_pairs); i++){
-         g_ssl_name = "Market\\ssl.ex5";
-         all_currency_data[i].g_handle_ssl = iCustom(currency_pairs[i],Period(),g_ssl_name,13,true,0);
-         Print("Handle for SSL /", Symbol()," / ", EnumToString(Period()),"successfully created");
-         //Error Handling
-         if(all_currency_data[i].g_handle_ssl == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-      }
-      
-      // Setup handle for Waddah Attar Explosion on the OnInit
-      for(int i = 0; i < ArraySize(currency_pairs); i++){
-         g_wae_name = "Market\\waddah_attar_explosion.ex5";
-         all_currency_data[i].g_wae_handle = iCustom(currency_pairs[i], Period(), g_wae_name,20,40,20,2.0,150,400,15,150,false,2,false,false,false,false);
-         Print("Handle for WAE /", Symbol()," / ", EnumToString(Period()),"successfully created");
-         //Error Handling
-         if(all_currency_data[i].g_wae_handle == INVALID_HANDLE) {
-            Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-            return(INIT_FAILED);
-         }
-      } 
-   
-      // Setup handle for Geometric Mean Average on the OnInit
-      for(int i = 0; i < ArraySize(currency_pairs); i++){
-         g_gma_name = "Market\\YGMA.ex5";
-         all_currency_data[i].g_handle_gma = iCustom(currency_pairs[i], Period(), g_gma_name,5,12);
-         Print("Handle for GMA /", Symbol()," / ", EnumToString(Period()),"successfully created");
-         //Error Handling
-         if(all_currency_data[i].g_handle_gma == INVALID_HANDLE) {
-            Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-            return(INIT_FAILED);
-         }
-      }
- 
-      // Setup handle for Relative Vigor Index on the OnInit
-      for(int i = 0; i < ArraySize(currency_pairs); i++){
-         g_rvi_name = "Market\\rvi.ex5";
-         all_currency_data[i].g_handle_rvi = iCustom(currency_pairs[i], Period(), g_rvi_name,10);
-         Print("Handle for RVI /", Symbol()," / ", EnumToString(Period()),"successfully created");
-         //Error Handling
-         if(all_currency_data[i].g_handle_rvi == INVALID_HANDLE) {
-            Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-            return(INIT_FAILED);
-         }
-      }
-      */
       return(INIT_SUCCEEDED);
   }
 //+------------------------------------------------------------------+
@@ -717,7 +727,7 @@ void OnTick()
                  }
               }
             }
-       
+      /* 
       //Initiate String for indicatorMetrics Variable. This will reset variable each time OnTick function runs.
       string indicator_metrics = "";  
       StringConcatenate(indicator_metrics,symbol," | Last Processed: ",TimeLastTickProcessed);
@@ -729,11 +739,15 @@ void OnTick()
       //Another Confirmation Trigger - RVI
       all_currency_data[i].open_confirmation_rvi = rviConfirmation();
       StringConcatenate(indicator_metrics, indicator_metrics, " | Confirmation Bias: ", all_currency_data[i].open_confirmation_rvi); //Concatenate indicator values to output comment for user
-      
+      */
       //Money Management - ATR
-      all_currency_data[i].g_current_atr = getAtrValue(); //Gets ATR value double using custom function - convert double to string as per symbol digits
-      StringConcatenate(indicator_metrics, indicator_metrics, " | ATR: ", all_currency_data[i].g_current_atr);
-           
+      currencies[i].updateIndicators();
+      double atr_current = currencies[i].GetAtr(0);
+      double atr_previous1 = currencies[i].GetAtr(1);
+      double atr_previous2 = currencies[i].GetAtr(2);
+      PrintFormat("Symbol: %s, ATR Current: %.5f, ATR Previous1: %.5f, ATR Previous2: %.5f", 
+      curriences[i].getSymbol(), atr_current, atr_previous1, atr_previous2);
+       /*    
       //Volume Filter - WAE
       all_currency_data[i].open_signal_wae = getWaeOpenSignal(); 
       StringConcatenate(indicator_metrics, indicator_metrics, " | WAE Bias: ", all_currency_data[i].open_signal_wae); //Concatenate indicator values to output comment for user
@@ -741,7 +755,7 @@ void OnTick()
       //Baseline Filter - GMA
       all_currency_data[i].open_signal_gma = getGmaOpenSignal();  
       StringConcatenate(indicator_metrics, indicator_metrics, " | GMA Bias: ", all_currency_data[i].open_signal_gma); //Concatenate indicator values to output comment for user
-      
+      */
       //Individual Indicator Tester
       if((all_currency_data[i].open_signal_ssl == "Long" && all_currency_data[i].open_signal_wae == "Volume Trade" && all_currency_data[i].open_signal_gma == "Long" && all_currency_data[i].open_confirmation_rvi == "Long")||all_currency_data[i].g_continuation_trade == "Long"){
          if(g_stop_order)
@@ -1184,7 +1198,7 @@ bool isTradeAllowed()
           (bool)AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) && //Is account able to trade
           (bool)AccountInfoInteger(ACCOUNT_TRADE_EXPERT)); //Is account able to auto trade
 }
-
+/*
 //Custom Function to get ATR value
 double getAtrValue()
 {
@@ -1206,7 +1220,7 @@ double getAtrValue()
    //Return ATR Value
    return(current_atr);
 }
-
+*/
 //Finds the optimal lot size for the trade - Orghard Forex mod by Dillon Grech
 //https://www.youtube.com/watch?v=Zft8X3htrcc&t=724s
 double OptimalLotSize(string CurrentSymbol, double EntryPrice, double StopLoss)
