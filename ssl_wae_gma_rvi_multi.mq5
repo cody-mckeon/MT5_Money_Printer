@@ -141,6 +141,12 @@
 //|   Making the code more manageable.
 //|   1. Bundling the data and methods to manipulate the data within a class. Data is safe.
 //|   2. Getter and Setter Methods to Provide controlled access to the attributes
+
+//| Patch Notes 15
+//|   Need to add the ticket to the Object
+//|   Retrieveal of the ticket numbers for both orders and positions
+//|   Methods to Handle the Task.
+//|   On line 708 Get the last trade direction to determine how to place the continuation
 //+------------------------------------------------------------------+
 #property copyright "Cody McKeon"
 #property link      "https://www.mql5.com"
@@ -193,6 +199,7 @@ int g_atr_period  = 10;
 class CurrencyData {
    private:
       string symbol;
+      ulong ticket_number;  // Trade Ticket Number
       int    atr_handle;    // ATR
       double atr_buffer[];  //[prior,current confirmed,not confirmed]
    /*
@@ -220,8 +227,9 @@ class CurrencyData {
     
     public:
       // Constructor
-      CurrencyData(string sym){
-         symbol = sym;
+      CurrencyData(string _sym){
+         symbol = _sym;
+         trade_ticket = 0;
          atr_handle = INVALID_HANDLE;
          ArraySetAsSeries(atr_buffer, true); // Treat array as series
                   //ssl_handle = INVALID_HANDLE;
@@ -236,8 +244,62 @@ class CurrencyData {
                   //g_continuation = continuation;
                   //g_continuation_trade = continuation_trade;
            
-               }  
+       }  
+       
+       //*********************************
+       //   Helper Method Retrieve Trade Ticket |
+       //*********************************
+       ulong getTradeTicket(){
+         return trade_ticket;
+       }
+       
+       //*********************************************************
+       // Helper Method to select and check open orders for this symbol |
+       //*********************************************************
+       bool checkOpenOrders(){
+         int total_orders = OrdersTotal();
+         for(int i=0; i < total_orders; i++){
+            ulong ticket = OrderGetTicket(i);
+            if(OrderSelect(ticket) && OrderGetString(ORDER_SYMBOL) == symbol){
+               trade_ticket = ticket;
+               return true;
+            }
+         }
+         return false;
+       }
+       
+        //***************************************************
+        //  Method to select and check the current position |
+        //***************************************************
+        bool checkPosition(){
+            if(PositionSelect(symbol)){
+               ulong position_ticket = PositionGetInteger(POSITION_TICKET);
+               trade_ticket = position_ticket;
+               return true;
+            }
+            return false;
+        }
+        
+        //********************************************************
+        //  Method to get the direction of the last closed trade |
+        //  Return True for Long                                 |
+        //  Return False for Short                               |
+        //  Utilize this for continuation trade                  |
+        //********************************************************
+        bool getLastClosedTradeDirection(bool &isLong){
+            int total_history_orders = HistoryOrdersTotal();
+            if(total_history_orders == 0){
+               Print("No Historical Orders found for symbol: ", symbol);
+               return false;
+            }
+            
+            for(int i = total_history_orders - 1; i >= 0; i--){
                
+            }
+        }
+           
+        
+              
        // Initialize Indicator Handles
        // In Object Oriented Programs, The public members of a class can access the private members
        void InitIndicatorHandles(){
@@ -286,9 +348,9 @@ class CurrencyData {
          Print("Handle for RVI /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
          //Error Handling
          if(rvi_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-                
+             */   
        } 
-       */
+       
        
        //Function to update indicators
        void updateIndicators(){
@@ -319,6 +381,16 @@ class CurrencyData {
          
        }
        
+       //**************************************
+       // Method to release indicator Handles |
+       //**************************************
+       void releaseIndicatorHandles(){
+         if (atr_handle != INVALID_HANDLE){
+            IndicatorRelease(atr_handle);
+            atr_handle = INVALID_HANDLE;
+         }
+       }
+       
        // Get the ATR Value
        double getAtr(int shift){
          if(shift < ArraySize(atr_buffer)) return atr_buffer[shift];
@@ -333,16 +405,13 @@ class CurrencyData {
          return symbol;
        }
        
-       /*
-       //Check Continuation Trade Logic
-       bool CheckForContinuationTrade(){
-         
-       }*/
+       
+     
       
-}
+};
 
 // Array to hold currency data object 
-CurrencyData currencies[];
+CurrencyData* currencies[];
 
 //Setup Variables
 input int                InpMagicNumber  = 2000001;     //Unique identifier for this expert advisor
@@ -569,6 +638,7 @@ void OnDeinit(const int reason)
       //Remove indicator handle from Metatrader Cache
       for (int i = 0; i < ArraySize(currencies); i++){
          delete currencies[i];
+         currencies[i] = NULL;
       }
       Print("Handle Released");
   }
@@ -629,7 +699,9 @@ void OnTick()
          
          // A Continuation trade states that a trade has happened in the past and there
          // was no crossing of the base line. 
-         if (!PositionSelect(symbol) && (!OrderSelect(OrderGetTicket(i)))) 
+         // !Position Select will return TRUE if no position is found
+         // 
+         if (!currencies[i].checkPosition() && !currencies[i].checkOpenOrders()) 
          {            
             // Set the Global Variable to indicate partial close
             g_partial_close = 0;
@@ -739,7 +811,7 @@ void OnTick()
       //Another Confirmation Trigger - RVI
       all_currency_data[i].open_confirmation_rvi = rviConfirmation();
       StringConcatenate(indicator_metrics, indicator_metrics, " | Confirmation Bias: ", all_currency_data[i].open_confirmation_rvi); //Concatenate indicator values to output comment for user
-      */
+      
       //Money Management - ATR
       currencies[i].updateIndicators();
       double atr_current = currencies[i].GetAtr(0);
@@ -755,7 +827,7 @@ void OnTick()
       //Baseline Filter - GMA
       all_currency_data[i].open_signal_gma = getGmaOpenSignal();  
       StringConcatenate(indicator_metrics, indicator_metrics, " | GMA Bias: ", all_currency_data[i].open_signal_gma); //Concatenate indicator values to output comment for user
-      */
+      
       //Individual Indicator Tester
       if((all_currency_data[i].open_signal_ssl == "Long" && all_currency_data[i].open_signal_wae == "Volume Trade" && all_currency_data[i].open_signal_gma == "Long" && all_currency_data[i].open_confirmation_rvi == "Long")||all_currency_data[i].g_continuation_trade == "Long"){
          if(g_stop_order)
@@ -857,8 +929,184 @@ void OnTick()
             "MT5 Server Time: ", TimeCurrent(), "\n\r",
             "Symbols Traded: \n\r", 
             Symbol());
+  }*/
   }
- 
+  
+//--------------------------------------------------------------
+// calculateNoTradePeriods
+// datetime events, DateRange &noTradePeriods[]
+//--------------------------------------------------------------
+int calculateNoTradePeriods(datetime &events[], DateRange &no_trade_periods[]) {
+   int count = ArraySize(events);
+   ArrayResize(no_trade_periods, count);
+   
+   for(int i=0; i < count; i++){
+      no_trade_periods[i].start = events[i] - 6 * 86400;
+      no_trade_periods[i].end = events[i] + 6 * 86400;
+   }
+   
+   //ArraySort(no_trade_periods); !constant cannot be modified
+   bubbleSort(no_trade_periods, count);
+   
+   //Merged array
+   int newSize = 0;
+   //Merge overlapping periods
+   for(int i = 0; i < count; i++){
+      if(newSize == 0 || (no_trade_periods[newSize - 1].end < no_trade_periods[i].start)){
+         no_trade_periods[newSize] = no_trade_periods[i];
+         newSize += 1;    
+      } else {
+         // If the current period overlpas with the previous, extend the previous period's end date
+         no_trade_periods[newSize - 1].end = MathMax(no_trade_periods[newSize - 1].end, no_trade_periods[i].end);
+      }
+   }
+   
+   //Resize the noTradePeriods array to the new merged size
+   ArrayResize(no_trade_periods, newSize);
+   
+   return newSize; // Return the number of merged no-trade periods
+}
+
+//**************************************************
+//| Custom bubble sort function for DateRange array|
+//**************************************************
+void bubbleSort(DateRange &arr[], int size){
+   for(int i = 0; i < size - 1; i++){
+      for(int j = 0; j < size - i - 1; j++){
+         if(compareDateRange(arr[j], arr[j+1]) > 0){
+            //Swap the elements
+            DateRange temp = arr[j];
+            arr[j] = arr[j+1];
+            arr[j+1] = temp;     
+         }
+      }
+   }
+}
+//*********************
+//  Custom Function   |          
+//  isTradeAllowed()  |
+//  bool              |
+//*********************
+bool isTradeAllowed()
+{
+   return((bool)MQLInfoInteger(MQL_TRADE_ALLOWED) && //Trading allowed in input dialog
+          (bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) && //Trading allowed in terminal
+          (bool)AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) && //Is account able to trade
+          (bool)AccountInfoInteger(ACCOUNT_TRADE_EXPERT)); //Is account able to auto trade
+}
+
+//************************************************
+// Determine if trading is allowed based on time |
+//************************************************
+bool isNoTradeDay(DateRange &no_trade_period[], int size, datetime today){
+   // For Live Trading
+   //datetime today = __DATE__;
+   
+   // For Testing
+   today = stripTime(today);
+   
+   for(int i=0; i < size; i++){
+      // need to make the dates comparable by year month and day
+      datetime start = stripTime(no_trade_period[i].start);
+      datetime end = stripTime(no_trade_period[i].end);
+      
+      if(today >= start && today <= end){
+         return true;
+      }
+   }
+   return false;
+}
+
+//***********************************
+// Function to strip time component |
+//***********************************
+datetime stripTime(datetime dt){
+   MqlDateTime mdt;
+   TimeToStruct(dt, mdt);
+   mdt.hour = 0;
+   mdt.min = 0;
+   mdt.sec = 0;
+   return StructToTime(mdt);
+}
+
+//***********************************************************************
+// Function to calculate the current risk exposure from all open trades |
+//***********************************************************************
+double calculateCurrentRiskExposure() {
+   double total_risk = 0.0;
+   double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+  
+   // Loop through all open positions
+   for(int i = 0; i < PositionsTotal(); i++) {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket)) {
+         if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY || PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL){
+            string symbol = PositionGetString(POSITION_SYMBOL);
+            double volume = PositionGetDouble(POSITION_VOLUME);
+            double stop_loss = PositionGetDouble(POSITION_SL);
+            double price = PositionGetDouble(POSITION_PRICE_OPEN);
+            //Calculate the pip value
+            double pip_value = getPipValue(symbol, volume);
+            double stop_loss_pips = stopLossToPips(price, stop_loss, symbol);
+            double risk = volume * stop_loss_pips * pip_value;
+         
+            total_risk += risk; 
+         }
+      }
+   }
+   
+   //Calculate the risk as a percentage of the account balance
+   double total_risk_percentage = (total_risk / account_balance) * 100.0;
+   return total_risk_percentage;
+}
+
+//******************************
+//      Get the 0.0001 value   |
+//******************************
+double getPipValue(string symbol, double volume)
+{
+   // Get the point size for the symbol
+   double pointSize = SymbolInfoDouble(symbol, SYMBOL_POINT);
+   
+   // Get the lot size (assume 1 standard lot, i.e., 100,000 units of base currency)
+  
+   // Get the contract size
+   double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+   
+   // Calculate the pip value
+   double pipValue = pointSize * contractSize * volume;
+
+   // Adjust pip value for currency pairs that are not quoted in account currency
+   if (SymbolInfoString(symbol, SYMBOL_CURRENCY_PROFIT) != AccountInfoString(ACCOUNT_CURRENCY))
+   {
+      double rate = 1.0;
+      if (SymbolInfoString(symbol, SYMBOL_CURRENCY_PROFIT) + AccountInfoString(ACCOUNT_CURRENCY) != "USDUSD")
+      {
+         rate = SymbolInfoDouble(SymbolInfoString(symbol, SYMBOL_CURRENCY_PROFIT) + AccountInfoString(ACCOUNT_CURRENCY), SYMBOL_BID);
+      }
+      pipValue *= rate;
+   }
+   
+   return pipValue;
+}
+
+//***********************************************
+// Function to convert stop loss level to pips  |
+//***********************************************
+double stopLossToPips(double entry_price, double stop_loss_price, string symbol){
+   //Get the point size for the symbol
+   double point_size = SymbolInfoDouble(symbol, SYMBOL_POINT);
+   
+   //Calculate the price difference
+   double price_difference = MathAbs(entry_price - stop_loss_price);
+   
+   //Convert the price difference to pips
+   double stop_loss_pips = price_difference / point_size;
+   
+   return stop_loss_pips;
+}
+
+ /*
 //+------------------------------------------------------------------+
 //+------------------------------------------------------------------+
 //| Custom function                                                  |
@@ -904,7 +1152,7 @@ string getWaeOpenSignal(){
    /* ColorValue     = Buffer  0; //values
       Color          = Buffer 1; //signal 1-long/2-short
       Explosion      = Buffer 2; //Signal value
-      Dead           = Buffer 3; //Signal value*/
+      Dead           = Buffer 3; //Signal value
       
    //Set symbol string and indicator buffers
    const int start_candle      = 0;
@@ -1188,16 +1436,8 @@ void AdjustTsl(ulong Ticket, double CurrentAtr, double AtrMulti)
       return;
    } 
 }
-//Custom Function
-//isTradeAllowed()
-//bool
-bool isTradeAllowed()
-{
-   return((bool)MQLInfoInteger(MQL_TRADE_ALLOWED) && //Trading allowed in input dialog
-          (bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) && //Trading allowed in terminal
-          (bool)AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) && //Is account able to trade
-          (bool)AccountInfoInteger(ACCOUNT_TRADE_EXPERT)); //Is account able to auto trade
-}
+*/
+
 /*
 //Custom Function to get ATR value
 double getAtrValue()
@@ -1221,6 +1461,7 @@ double getAtrValue()
    return(current_atr);
 }
 */
+/*
 //Finds the optimal lot size for the trade - Orghard Forex mod by Dillon Grech
 //https://www.youtube.com/watch?v=Zft8X3htrcc&t=724s
 double OptimalLotSize(string CurrentSymbol, double EntryPrice, double StopLoss)
@@ -1322,9 +1563,11 @@ void ProcessTradeOpen(ENUM_ORDER_TYPE order_type, double CurrentAtr, string curr
    Print("Close Volume ", PositionGetDouble(POSITION_VOLUME) / 2);
    Print("Minimum Volume ", SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MIN));
 }
+*/
 
+/*
 //+-------------------------------------------------------------------------------------
-/* Normalize volume to meet broker requirements*/
+/* Normalize volume to meet broker requirements
 //+------------------------------------------------------------------
 double normalizeVolume(double volume){
    double min_volume = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MIN);
@@ -1350,71 +1593,10 @@ double normalizeVolume(double volume){
    return volume;
 }
 
+*/
 
-//Determine if trading is allowed based on time
-bool isNoTradeDay(DateRange &no_trade_period[], int size, datetime today){
-   // For Live Trading
-   //datetime today = __DATE__;
-   
-   // For Testing
-   today = stripTime(today);
-   
-   for(int i=0; i < size; i++){
-      // need to make the dates comparable by year month and day
-      datetime start = stripTime(no_trade_period[i].start);
-      datetime end = stripTime(no_trade_period[i].end);
-      
-      if(today >= start && today <= end){
-         return true;
-      }
-   }
-   return false;
-}
 
-//Function to strip time component
-datetime stripTime(datetime dt){
-   MqlDateTime mdt;
-   TimeToStruct(dt, mdt);
-   mdt.hour = 0;
-   mdt.min = 0;
-   mdt.sec = 0;
-   return StructToTime(mdt);
-}
 
-//--------------------------------------------------------------
-// calculateNoTradePeriods
-// datetime events, DateRange &noTradePeriods[]
-//--------------------------------------------------------------
-int calculateNoTradePeriods(datetime &events[], DateRange &no_trade_periods[]) {
-   int count = ArraySize(events);
-   ArrayResize(no_trade_periods, count);
-   
-   for(int i=0; i < count; i++){
-      no_trade_periods[i].start = events[i] - 6 * 86400;
-      no_trade_periods[i].end = events[i] + 6 * 86400;
-   }
-   
-   //ArraySort(no_trade_periods); !constant cannot be modified
-   bubbleSort(no_trade_periods, count);
-   
-   //Merged array
-   int newSize = 0;
-   //Merge overlapping periods
-   for(int i = 0; i < count; i++){
-      if(newSize == 0 || (no_trade_periods[newSize - 1].end < no_trade_periods[i].start)){
-         no_trade_periods[newSize] = no_trade_periods[i];
-         newSize += 1;    
-      } else {
-         // If the current period overlpas with the previous, extend the previous period's end date
-         no_trade_periods[newSize - 1].end = MathMax(no_trade_periods[newSize - 1].end, no_trade_periods[i].end);
-      }
-   }
-   
-   //Resize the noTradePeriods array to the new merged size
-   ArrayResize(no_trade_periods, newSize);
-   
-   return newSize; // Return the number of merged no-trade periods
-}
 
 // Comparison function
 // to sort DateRange by start date
@@ -1424,90 +1606,14 @@ int compareDateRange(const DateRange &a, const DateRange &b){
    return 0;
 }
 
-// Custome bubble sort function for DateRange array
-void bubbleSort(DateRange &arr[], int size){
-   for(int i = 0; i < size - 1; i++){
-      for(int j = 0; j < size - i - 1; j++){
-         if(compareDateRange(arr[j], arr[j+1]) > 0){
-            //Swap the elements
-            DateRange temp = arr[j];
-            arr[j] = arr[j+1];
-            arr[j+1] = temp;     
-         }
-      }
-   }
-}
-
-// Function to calculate the current risk exposure from all open trades
-double calculateCurrentRiskExposure() {
-   double total_risk = 0.0;
-   double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
-  
-   // Loop through all open positions
-   for(int i = 0; i < PositionsTotal(); i++) {
-   ulong ticket = PositionGetTicket(i);
-      if(PositionSelectByTicket(ticket)) {
-         if(position_direction == POSITION_TYPE_BUY || position_direction == POSITION_TYPE_SELL){
-            string symbol = PositionGetString(POSITION_SYMBOL);
-            double volume = PositionGetDouble(POSITION_VOLUME);
-            double stop_loss = PositionGetDouble(POSITION_SL);
-            double price = PositionGetDouble(POSITION_PRICE_OPEN);
-            //Calculate the pip value
-            double pip_value = getPipValue(symbol, volume);
-            double stop_loss_pips = stopLossToPips(price, stop_loss, symbol);
-            double risk = volume * stop_loss_pips * pip_value;
-         
-            total_risk += risk; 
-         }
-      }
-   }
-   
-   //Calculate the risk as a percentage of the account balance
-   double total_risk_percentage = (total_risk / account_balance) * 100.0;
-   return total_risk_percentage;
-}
-
-double getPipValue(string symbol, double volume)
-{
-   // Get the point size for the symbol
-   double pointSize = SymbolInfoDouble(symbol, SYMBOL_POINT);
-   
-   // Get the lot size (assume 1 standard lot, i.e., 100,000 units of base currency)
-  
-   // Get the contract size
-   double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
-   
-   // Calculate the pip value
-   double pipValue = pointSize * contractSize * volume;
-
-   // Adjust pip value for currency pairs that are not quoted in account currency
-   if (SymbolInfoString(symbol, SYMBOL_CURRENCY_PROFIT) != AccountInfoString(ACCOUNT_CURRENCY))
-   {
-      double rate = 1.0;
-      if (SymbolInfoString(symbol, SYMBOL_CURRENCY_PROFIT) + AccountInfoString(ACCOUNT_CURRENCY) != "USDUSD")
-      {
-         rate = SymbolInfoDouble(SymbolInfoString(symbol, SYMBOL_CURRENCY_PROFIT) + AccountInfoString(ACCOUNT_CURRENCY), SYMBOL_BID);
-      }
-      pipValue *= rate;
-   }
-   
-   return pipValue;
-}
 
 
-//| Function to convert stop loss level to pips
-double stopLossToPips(double entry_price, double stop_loss_price, string symbol){
-   //Get the point size for the symbol
-   double point_size = SymbolInfoDouble(symbol, SYMBOL_POINT);
-   
-   //Calculate the price difference
-   double price_difference = MathAbs(entry_price - stop_loss_price);
-   
-   //Convert the price difference to pips
-   double stop_loss_pips = price_difference / point_size;
-   
-   return stop_loss_pips;
-}
+
+
+
+
+
+
 
 //| Calculate Required Margin
 double calculateRequiredMargin(string symbol, double volume){
