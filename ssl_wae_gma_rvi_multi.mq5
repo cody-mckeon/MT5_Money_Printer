@@ -156,8 +156,6 @@
 #include <Trade\Trade.mqh> //Include MQL trade object functions
 CTrade   *Trade;           //Declaire Trade as pointer to CTrade class
 
-
-
 //+------------------------------------+
 // No trade periods |
 //+------------------------------------+
@@ -196,12 +194,24 @@ currencyData all_currency_data[];*/
 int g_atr_period  = 10;
 
 // Class for the currency indicator data and position information
+// ATR
+// SSL
+// GMA
 class CurrencyData {
    private:
       string symbol;
       ulong ticket_number;  // Trade Ticket Number
       int    atr_handle;    // ATR
       double atr_buffer[];  //[prior,current confirmed,not confirmed]
+      int    gma_handle;    //GMA
+      double geo_buffer[];
+      double ygma_buffer[];
+      int ssl_handle;       //SSL
+      double sell_ssl_buffer[];
+      double buy_ssl_buffer[];
+      
+      int last_trade_direction; //1 for BUY, -1 for SELL, 0 for no direction
+      
    /*
       int ssl_handle; // SSL
       string open_signal_ssl;
@@ -231,7 +241,14 @@ class CurrencyData {
          symbol = _sym;
          trade_ticket = 0;
          atr_handle = INVALID_HANDLE;
-         ArraySetAsSeries(atr_buffer, true); // Treat array as series
+         gma_handle = INVALID_HANDLE;
+         ssl_handle = INVALID_HANDLE;
+         ArraySetAsSeries(atr_buffer, true); // Treat array as series, most recent elements are placed at the beginning of the array index 0
+         ArraySetAsSeries(geo_buffer, true); // Treat array as series
+         ArraySetAsSeries(ygma_buffer, true); // Treat array as series
+         ArraySetAsSeries(sell_ssl_buffer, true); // Treat array as series
+         ArraySetAsSeries(buy_ssl_buffer, true); // Treat array as series
+         last_trade_direction = 0; // Initialize with no direction
                   //ssl_handle = INVALID_HANDLE;
                   //open_signal_ssl = "No Trade";
                   //wae_handle = INVALID_HANDLE;
@@ -280,26 +297,47 @@ class CurrencyData {
             return false;
         }
         
-        //********************************************************
-        //  Method to get the direction of the last closed trade |
-        //  Return True for Long                                 |
-        //  Return False for Short                               |
-        //  Utilize this for continuation trade                  |
-        //********************************************************
-        bool getLastClosedTradeDirection(bool &isLong){
+        //***********************************
+        //  Update the last trade direction |
+        //***********************************
+        void updateLastTradeDirection(){
             int total_history_orders = HistoryOrdersTotal();
-            if(total_history_orders == 0){
-               Print("No Historical Orders found for symbol: ", symbol);
-               return false;
-            }
-            
-            for(int i = total_history_orders - 1; i >= 0; i--){
-               
+            if(total_history_orders > 0){
+               ulong last_order_ticket = HistoryOrderGetTicket(total_history_orders - 1);
+               if(HistoryOrderSelect(last_order_ticket)){
+                  int order_type = HistoryOrderGetInteger(ORDER_TYPE);
+                  if(order_type == ORDER_TYPE_BUY){
+                     last_trade_direction = 1; //BUY
+                  } else if(order_type == ORDER_TYPE_SELL){
+                     last_trade_direction = -1; //SELL
+                  }
+               }
             }
         }
-           
         
-              
+        //*************************************
+        //   Check for continuation trade     |
+        //*************************************
+        bool checkForContinuationTrade(){
+            //Example logic: continuation trade if there was not a cross of the baseline
+            double current_gma = geo_avg[1]; //Bar that just closed
+            double current_ygma = ygma_avg[1]; //Bar that just closed
+            double prior_gma = geo_avg[0];
+            double price = iClose(Symbol(), Period(), 1);
+           
+           // First Condition:
+           //     Continuation LONG  if the last trade 1 was long and the Baseline never crossed short
+           //     Continuation SHORT if the last trade -1 was short and the Baseline never crossed long
+           // Second Condition:
+           //     Continuation LONG if the upper SSL is not empty
+           //     Continuation SHORT if the lower SSL is not empty 
+           if((price > current_gma) && (last_trade_direction == 1) || (price < current_gma) && (last_trade_direction == -1)){
+               if((sell_ssl_buffer[1] != DBL_MAX) && (buy_ssl_buffer[1] == DBL_MAX) || (buy_ssl_buffer[1] != DBL_MAX) && (sell_ssl_buffer[1] == DBL_MAX))
+                  return true;
+           }
+           return false;
+        }
+                    
        // Initialize Indicator Handles
        // In Object Oriented Programs, The public members of a class can access the private members
        void InitIndicatorHandles(){
@@ -310,25 +348,6 @@ class CurrencyData {
          Print("Handle for ATR /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
          //Error Handling
          if(atr_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-         /*
-         //********************
-         //|   SSL Handle     |
-         //********************
-         g_ssl_name = "Market\\ssl.ex5";
-         ssl_handle = iCustom(symbol,PERIOD_D1,g_ssl_name,13,true,0);
-         Print("Handle for SSL /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
-         //Error Handling
-         if(ssl_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-         
-         //********************
-         //|   WAE HANDLE     |
-         //********************
-         g_wae_name = "Market\\waddah_attar_explosion.ex5";
-         wae_handle = iCustom(symbol, PERIOD_D1, g_wae_name,20,40,20,2.0,150,400,15,150,false,2,false,false,false,false);
-         Print("Handle for WAE /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
-         //Error Handling
-         if(wae_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-         
          
          //********************
          //|   GMA HANDLE     |
@@ -338,8 +357,26 @@ class CurrencyData {
          Print("Handle for GMA /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
          //Error Handling
          if(gma_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-            
          
+         //********************
+         //|   SSL Handle     |
+         //********************
+         g_ssl_name = "Market\\ssl.ex5";
+         ssl_handle = iCustom(symbol,PERIOD_D1,g_ssl_name,13,true,0);
+         Print("Handle for SSL /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+         //Error Handling
+         if(ssl_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+         
+         /*
+         //********************
+         //|   WAE HANDLE     |
+         //********************
+         g_wae_name = "Market\\waddah_attar_explosion.ex5";
+         wae_handle = iCustom(symbol, PERIOD_D1, g_wae_name,20,40,20,2.0,150,400,15,150,false,2,false,false,false,false);
+         Print("Handle for WAE /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+         //Error Handling
+         if(wae_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+       
          //********************
          //|   RVI HANDLE     |
          //********************
@@ -365,7 +402,6 @@ class CurrencyData {
             //Indicator Variables and Buffers
             const int index_atr        = 0; //ATR Value
             
-
             //Populate buffers for ATR Value; check errors
             bool fill_atr = CopyBuffer(atr_handle,index_atr,start_candle,required_candles,atr_buffer); //Copy buffer uses oldest as 0 (reversed)
             if(fill_atr==false) Print("Error creating ATR handle for symbol: ", symbol, " Error: ", GetLastError());
@@ -375,10 +411,34 @@ class CurrencyData {
          }
          
          //******************
-         //|                | 
+         //|      GMA       | 
          //******************
-         
-         
+         if(gma_handle != INVALID_HANDLE){
+            //Set symbol string and indicator buffers
+            const int start_candle      = 0;
+            const int required_candle  = 3; //How many candles are required to be stored in Expert
+   
+            bool fill_geo_gma = CopyBuffer(gma_handle,0,start_candle,required_candle,geo_buffer);
+            bool fill_ygma = CopyBuffer(gma_handle,1,start_candle,required_candle,ygma_buffer);
+            if(fill_geo_gma==false) Print("Error creating Geo GMA handle for symbol: ", symbol, " Error: ", GetLastError());
+            if(fill_ygma==false) Print("Error creating YGMA handle for symbol: ", symbol, " Error: ", GetLastError());
+         }
+       
+         //******************
+         //|      SSL       | 
+         //******************
+         if(ssl_handle != INVALID_HANDLE){
+            //Set symbol string and indicator buffers
+            const int start_candle      = 0;
+            const int required_candle   = 2; //How many candles are required to be stored in Expert
+     
+            bool fill_sell_ssl = CopyBuffer(g_handle_ssl,3,start_candle,required_candle,sell_ssl_buffer);
+            bool fill_buy_ssl = CopyBuffer(g_handle_ssl,2,start_candle,required_candle,buy_ssl_buffer);
+            if(fill_sell_ssl == false) Print("Error creating sell SSL handle for symbol: ", symbol, " Error: ", GetLastError());
+            if(fill_buy_ssl == false) Print("Error creating buy SSL handle for symbol: ", symbol, " Error: ", GetLastError());
+         }
+    
+      
        }
        
        //**************************************
@@ -403,11 +463,7 @@ class CurrencyData {
        // Get the Symbol 
        string getSymbol(){
          return symbol;
-       }
-       
-       
-     
-      
+       }     
 };
 
 // Array to hold currency data object 
@@ -435,9 +491,7 @@ MqlRates    g_bar[];
 
 //Continuation Trades
 int g_continuation_trade_direction;
-  
 int g_continuation_candle_count = 0;
-
 int g_continuation_start_candle = 0; 
 
 //Scaling out variables
@@ -699,12 +753,31 @@ void OnTick()
          
          // A Continuation trade states that a trade has happened in the past and there
          // was no crossing of the base line. 
-         // !Position Select will return TRUE if no position is found
-         // 
          if (!currencies[i].checkPosition() && !currencies[i].checkOpenOrders()) 
          {            
             // Set the Global Variable to indicate partial close
             g_partial_close = 0;
+            
+            // Check for the last closed trade direction
+            currencies[i].updateLastTradeDirection();
+            
+            // Continuation Trade Logic
+            if(currencies[i].checkForContinuationTrade()){
+               // Place the trade for long if SSL is long
+               if((buy_ssl[0] != DBL_MAX) && (sell_ssl[0] == DBL_MAX)){
+                  if(g_stop_order)
+                     ProcessTradeOpen(ORDER_TYPE_BUY_STOP, currencies[i].atr_buffer[0], currencies[i].symbol);
+                  else if(g_market_order)
+                     ProcessTradeOpen(ORDER_TYPE_BUY, currencies[i].atr_buffer, currencies[i].symbol);
+               } else if((sell_ssl_buffer[1] != DBL_MAX) && (buy_ssl_buffer[1] == DBL_MAX)){
+                  if(g_stop_order)
+                     ProcessTradeOpen(ORDER_TYPE_SELL_STOP, currencies[i].atr_buffer[0], currencies[i].symbol);
+                  else if(g_market_order)
+                     ProcessTradeOpen(ORDER_TYPE_SELL, currencies_data[i].atr_buffer[0], currencies[i].symbol);
+               }
+               
+            }
+            /*
             // Continuation check baseline
             if(g_continuation_trade_direction == ORDER_TYPE_BUY){
                //Get in trade candle count past baseline data
@@ -797,7 +870,7 @@ void OnTick()
                         all_currency_data[i].g_continuation_trade = "No continuation";
                      }  
                  }
-              }
+              }*/
             }
       /* 
       //Initiate String for indicatorMetrics Variable. This will reset variable each time OnTick function runs.
@@ -931,7 +1004,73 @@ void OnTick()
             Symbol());
   }*/
   }
+
+//*********************
+//  Custom Function   |          
+//  isTradeAllowed()  |
+//  bool              |
+//*********************
+bool isTradeAllowed()
+{
+   return((bool)MQLInfoInteger(MQL_TRADE_ALLOWED) && //Trading allowed in input dialog
+          (bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) && //Trading allowed in terminal
+          (bool)AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) && //Is account able to trade
+          (bool)AccountInfoInteger(ACCOUNT_TRADE_EXPERT)); //Is account able to auto trade
+}
+
+//************************************************
+// Determine if trading is allowed based on time |
+//************************************************
+bool isNoTradeDay(DateRange &no_trade_period[], int size, datetime today){
+   // For Live Trading
+   //datetime today = __DATE__;
+   
+   // For Testing
+   today = stripTime(today);
+   
+   for(int i=0; i < size; i++){
+      // need to make the dates comparable by year month and day
+      datetime start = stripTime(no_trade_period[i].start);
+      datetime end = stripTime(no_trade_period[i].end);
+      
+      if(today >= start && today <= end){
+         return true;
+      }
+   }
+   return false;
+}
+
+//***********************************************************************
+// Function to calculate the current risk exposure from all open trades |
+//***********************************************************************
+double calculateCurrentRiskExposure() {
+   double total_risk = 0.0;
+   double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
   
+   // Loop through all open positions
+   for(int i = 0; i < PositionsTotal(); i++) {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket)) {
+         if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY || PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL){
+            string symbol = PositionGetString(POSITION_SYMBOL);
+            double volume = PositionGetDouble(POSITION_VOLUME);
+            double stop_loss = PositionGetDouble(POSITION_SL);
+            double price = PositionGetDouble(POSITION_PRICE_OPEN);
+            //Calculate the pip value
+            double pip_value = getPipValue(symbol, volume);
+            double stop_loss_pips = stopLossToPips(price, stop_loss, symbol);
+            double risk = volume * stop_loss_pips * pip_value;
+         
+            total_risk += risk; 
+         }
+      }
+   }
+   
+   //Calculate the risk as a percentage of the account balance
+   double total_risk_percentage = (total_risk / account_balance) * 100.0;
+   return total_risk_percentage;
+}
+ 
 //--------------------------------------------------------------
 // calculateNoTradePeriods
 // datetime events, DateRange &noTradePeriods[]
@@ -982,40 +1121,6 @@ void bubbleSort(DateRange &arr[], int size){
       }
    }
 }
-//*********************
-//  Custom Function   |          
-//  isTradeAllowed()  |
-//  bool              |
-//*********************
-bool isTradeAllowed()
-{
-   return((bool)MQLInfoInteger(MQL_TRADE_ALLOWED) && //Trading allowed in input dialog
-          (bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) && //Trading allowed in terminal
-          (bool)AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) && //Is account able to trade
-          (bool)AccountInfoInteger(ACCOUNT_TRADE_EXPERT)); //Is account able to auto trade
-}
-
-//************************************************
-// Determine if trading is allowed based on time |
-//************************************************
-bool isNoTradeDay(DateRange &no_trade_period[], int size, datetime today){
-   // For Live Trading
-   //datetime today = __DATE__;
-   
-   // For Testing
-   today = stripTime(today);
-   
-   for(int i=0; i < size; i++){
-      // need to make the dates comparable by year month and day
-      datetime start = stripTime(no_trade_period[i].start);
-      datetime end = stripTime(no_trade_period[i].end);
-      
-      if(today >= start && today <= end){
-         return true;
-      }
-   }
-   return false;
-}
 
 //***********************************
 // Function to strip time component |
@@ -1027,37 +1132,6 @@ datetime stripTime(datetime dt){
    mdt.min = 0;
    mdt.sec = 0;
    return StructToTime(mdt);
-}
-
-//***********************************************************************
-// Function to calculate the current risk exposure from all open trades |
-//***********************************************************************
-double calculateCurrentRiskExposure() {
-   double total_risk = 0.0;
-   double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
-  
-   // Loop through all open positions
-   for(int i = 0; i < PositionsTotal(); i++) {
-      ulong ticket = PositionGetTicket(i);
-      if(PositionSelectByTicket(ticket)) {
-         if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY || PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL){
-            string symbol = PositionGetString(POSITION_SYMBOL);
-            double volume = PositionGetDouble(POSITION_VOLUME);
-            double stop_loss = PositionGetDouble(POSITION_SL);
-            double price = PositionGetDouble(POSITION_PRICE_OPEN);
-            //Calculate the pip value
-            double pip_value = getPipValue(symbol, volume);
-            double stop_loss_pips = stopLossToPips(price, stop_loss, symbol);
-            double risk = volume * stop_loss_pips * pip_value;
-         
-            total_risk += risk; 
-         }
-      }
-   }
-   
-   //Calculate the risk as a percentage of the account balance
-   double total_risk_percentage = (total_risk / account_balance) * 100.0;
-   return total_risk_percentage;
 }
 
 //******************************
