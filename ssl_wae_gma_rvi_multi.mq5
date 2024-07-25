@@ -642,11 +642,11 @@ string currency_pairs[] = {
 // Major Pairs
     "EURUSD", // Euro/US Dollar
     "USDJPY", // US Dollar/Japanese Yen
-    "GBPUSD", // British Pound/US Dollar
-    "USDCHF", // US Dollar/Swiss Franc
-    "AUDUSD", // Australian Dollar/US Dollar
-    "USDCAD", // US Dollar/Canadian Dollar
-    "NZDUSD", // New Zealand Dollar/US Dollar
+//    "GBPUSD", // British Pound/US Dollar
+//    "USDCHF", // US Dollar/Swiss Franc
+//    "AUDUSD", // Australian Dollar/US Dollar
+//    "USDCAD", // US Dollar/Canadian Dollar
+//    "NZDUSD", // New Zealand Dollar/US Dollar
 /*
 // Minor Pairs (Cross-Currency Pairs)
     "EURGBP", // Euro/British Pound
@@ -750,7 +750,7 @@ void OnTick()
    TicksReceivedCount++; //Counts the number of ticks received
    
    // Start looping through the currency pairs and apply strategy to look for trades
-   for (int i = 0; i < ArraySize(currencies); i++){       
+   for (int i = 0; i <= ArraySize(currencies); i++){       
       //Checks for new candle
       bool is_new_candle = false;
       if(TimeLastTickProcessed != iTime(currencies[i].getSymbol(),PERIOD_D1,0))
@@ -778,12 +778,15 @@ void OnTick()
             // Set the Global Variable to indicate partial close
             g_partial_close = 0;
             
+            //Access indicators
+            currencies[i].updateIndicators();
+            
             // Check for the last closed trade direction
             currencies[i].updateLastTradeDirection();
             
             // Continuation Trade Logic
             if(currencies[i].checkForContinuationTrade()){
-               // Place the trade for long if SSL is long
+               // Place the trade for long if SSL is long or short
                if((currencies[i].getBuySSL(0) != DBL_MAX) && (currencies[i].getSellSSL(0) == DBL_MAX)){
                   if(g_stop_order) ProcessTradeOpen(ORDER_TYPE_BUY_STOP, currencies[i].getAtr(0), currencies[i].getSymbol());
                   else if(g_market_order) ProcessTradeOpen(ORDER_TYPE_BUY, currencies[i].getAtr(0), currencies[i].getSymbol());
@@ -793,10 +796,24 @@ void OnTick()
                }
                
             }
+            
+            //Individual Indicator Tester
+            if((currencies[i].getBuySSL(0) != DBL_MAX) && (currencies[i].getSellSSL(0) == DBL_MAX)){
+              if(g_stop_order) ProcessTradeOpen(ORDER_TYPE_BUY_STOP, currencies[i].getAtr(0), currencies[i].getSymbol());
+              else if(g_market_order) ProcessTradeOpen(ORDER_TYPE_BUY, currencies[i].getAtr(0), currencies[i].getSymbol());
+            else if((currencies[i].getSellSSL(1) != DBL_MAX) && (currencies[i].getBuySSL(1) == DBL_MAX)){
+              if(g_stop_order) ProcessTradeOpen(ORDER_TYPE_SELL_STOP, currencies[i].getAtr(0), currencies[i].getSymbol());
+              else if(g_market_order) ProcessTradeOpen(ORDER_TYPE_SELL, currencies[i].getAtr(0), currencies[i].getSymbol());
+            } else {
+                  Print("SSL ",currencies[i].getBuySSL(0), " ", currencies[i].getSellSSL(0));
+                  Print("ATR ",currencies[i].getAtr(0));
+                  Print("No Trade Signal from OnTick");
+            }
            }
           }
          }
         }
+       }
             /*
             // Continuation check baseline
             if(g_continuation_trade_direction == ORDER_TYPE_BUY){
@@ -1100,8 +1117,8 @@ int calculateNoTradePeriods(datetime &events[], DateRange &no_trade_periods[]) {
    ArrayResize(no_trade_periods, count);
    
    for(int i=0; i < count; i++){
-      no_trade_periods[i].start = events[i] - 6 * 86400;
-      no_trade_periods[i].end = events[i] + 6 * 86400;
+      no_trade_periods[i].start = events[i] - 1 * 86400;
+      no_trade_periods[i].end = events[i] + 1 * 86400;
    }
    
    //ArraySort(no_trade_periods); !constant cannot be modified
