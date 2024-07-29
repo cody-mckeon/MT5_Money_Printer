@@ -193,10 +193,13 @@ currencyData all_currency_data[];*/
 //ATR Handle and Variables
 int g_atr_period  = 10;
 
-// Class for the currency indicator data and position information
-// ATR
-// SSL
-// GMA
+/******************************************************************|
+// Class for the currency indicator data and position information  |
+//    Indicator Management Class                                   |
+//    Manages different indicators and provides interface to       |
+//    Abstract Base Class with Inheritance to functions            |
+*******************************************************************/
+
 class CurrencyData {
    private:
       string symbol;
@@ -236,215 +239,11 @@ class CurrencyData {
       
     
     public:
-      // Constructor
-      CurrencyData(string _sym){
-         symbol = _sym;
-         ticket_number = 0;
-         atr_handle = INVALID_HANDLE;
-         gma_handle = INVALID_HANDLE;
-         ssl_handle = INVALID_HANDLE;
-         ArraySetAsSeries(atr_buffer, true); // Treat array as series, most recent elements are placed at the beginning of the array index 0
-         ArraySetAsSeries(geo_buffer, true); // Treat array as series
-         ArraySetAsSeries(ygma_buffer, true); // Treat array as series
-         ArraySetAsSeries(sell_ssl_buffer, true); // Treat array as series
-         ArraySetAsSeries(buy_ssl_buffer, true); // Treat array as series
-         last_trade_direction = 0; // Initialize with no direction
-                  //ssl_handle = INVALID_HANDLE;
-                  //open_signal_ssl = "No Trade";
-                  //wae_handle = INVALID_HANDLE;
-                  //open_signal_wae = "No Trade"
-                  //gma_handle = INVALID_HANDLE;
-                  //open_signal_gma = "No Trade";
-                 //rvi_handle = INVALID_HANDLE;
-                  //open_signal_rvi = "No Trade";
-                  //g_order_type
-                  //g_continuation = continuation;
-                  //g_continuation_trade = continuation_trade;
-           
-       }  
-       
-       //*********************************
-       //   Helper Method Retrieve Trade Ticket |
-       //*********************************
-       ulong getTradeTicket(){
-         return ticket_number;
-       }
-       
-       //*********************************************************
-       // Helper Method to select and check open orders for this symbol |
-       //*********************************************************
-       bool checkOpenOrders(){
-         int total_orders = OrdersTotal();
-         for(int i=0; i < total_orders; i++){
-            ulong ticket = OrderGetTicket(i);
-            if(OrderSelect(ticket) && OrderGetString(ORDER_SYMBOL) == symbol){
-               ticket_number = ticket;
-               return true;
-            }
-         }
-         return false;
-       }
-       
-        //***************************************************
-        //  Method to select and check the current position |
-        //***************************************************
-        bool checkPosition(){
-            if(PositionSelect(symbol)){
-               ulong position_ticket = PositionGetInteger(POSITION_TICKET);
-               ticket_number = position_ticket;
-               return true;
-            }
-            return false;
-        }
+       CurrencyData();
+       getTradeTicket();
+       initIndicatorHandles();
+       updateIndicators();
         
-        //***********************************
-        //  Update the last trade direction |
-        //***********************************
-        void updateLastTradeDirection(){
-            int total_history_orders = HistoryOrdersTotal();
-            if(total_history_orders > 0){
-               ulong last_order_ticket = HistoryOrderGetTicket(total_history_orders - 1);
-               if(HistoryOrderSelect(last_order_ticket)){
-                  int order_type = HistoryOrderGetInteger(last_order_ticket, ORDER_TYPE);
-                  if(order_type == ORDER_TYPE_BUY){
-                     last_trade_direction = 1; //BUY
-                  } else if(order_type == ORDER_TYPE_SELL){
-                     last_trade_direction = -1; //SELL
-                  }
-               }
-            }
-        }
-        
-        //*************************************
-        //   Check for continuation trade     |
-        //*************************************
-        bool checkForContinuationTrade(){
-            //Example logic: continuation trade if there was not a cross of the baseline
-            double current_gma = geo_buffer[1]; //Bar that just closed
-            double current_ygma = ygma_buffer[1]; //Bar that just closed
-            double prior_gma = geo_buffer[0];
-            double price = iClose(Symbol(), Period(), 1);
-           
-           // First Condition:
-           //     Continuation LONG  if the last trade 1 was long and the Baseline never crossed short
-           //     Continuation SHORT if the last trade -1 was short and the Baseline never crossed long
-           // Second Condition:
-           //     Continuation LONG if the upper SSL is not empty
-           //     Continuation SHORT if the lower SSL is not empty 
-           if((price > current_gma) && (last_trade_direction == 1) || (price < current_gma) && (last_trade_direction == -1)){
-               if((sell_ssl_buffer[1] != DBL_MAX) && (buy_ssl_buffer[1] == DBL_MAX) || (buy_ssl_buffer[1] != DBL_MAX) && (sell_ssl_buffer[1] == DBL_MAX))
-                  return true;
-           }
-           return false;
-        }
-        
-       //**********************************            
-       // Initialize Indicator Handles    |
-       // In Object Oriented Programs,    |
-       // The public members of a class   |
-       // can access the private members  |
-       //**********************************
-       void InitIndicatorHandles(){
-         //********************
-         //|   ATR Handle     |
-         //********************
-         atr_handle = iATR(symbol,PERIOD_D1,g_atr_period);
-         Print("Handle for ATR /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
-         //Error Handling
-         if(atr_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-         
-         //********************
-         //|   GMA HANDLE     |
-         //********************
-         string g_gma_name = "Market\\YGMA.ex5";
-         gma_handle = iCustom(symbol, PERIOD_D1, g_gma_name,5,12);
-         Print("Handle for GMA /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
-         //Error Handling
-         if(gma_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-         
-         //********************
-         //|   SSL Handle     |
-         //********************
-         string g_ssl_name = "Market\\ssl.ex5";
-         ssl_handle = iCustom(symbol,PERIOD_D1,g_ssl_name,13,true,0);
-         Print("Handle for SSL /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
-         //Error Handling
-         if(ssl_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-         
-         /*
-         //********************
-         //|   WAE HANDLE     |
-         //********************
-         g_wae_name = "Market\\waddah_attar_explosion.ex5";
-         wae_handle = iCustom(symbol, PERIOD_D1, g_wae_name,20,40,20,2.0,150,400,15,150,false,2,false,false,false,false);
-         Print("Handle for WAE /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
-         //Error Handling
-         if(wae_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-       
-         //********************
-         //|   RVI HANDLE     |
-         //********************
-         g_rvi_name = "Market\\rvi.ex5";
-         rvi_handle = iCustom(symbol, PERIOD_D1, g_rvi_name,10);
-         Print("Handle for RVI /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
-         //Error Handling
-         if(rvi_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-             */   
-       } 
-       
-       
-       //Function to update indicators
-       void updateIndicators(){
-         //******************
-         //|      ATR       | 
-         //******************
-         if(atr_handle != INVALID_HANDLE){
-            //Set symbol string and indicator buffer
-            const int start_candle     = 0;
-            const int required_candles = 3; //How many candles are required to be stored in Expert 
-
-            //Indicator Variables and Buffers
-            const int index_atr        = 0; //ATR Value
-            
-            //Populate buffers for ATR Value; check errors
-            bool fill_atr = CopyBuffer(atr_handle,index_atr,start_candle,required_candles,atr_buffer); //Copy buffer uses oldest as 0 (reversed)
-            if(fill_atr==false) Print("Error creating ATR handle for symbol: ", symbol, " Error: ", GetLastError());
-
-             //Find ATR Value for Candle '1' Only
-             //double current_atr   = NormalizeDouble(atr_buffer[1],5);
-         }
-         
-         //******************
-         //|      GMA       | 
-         //******************
-         if(gma_handle != INVALID_HANDLE){
-            //Set symbol string and indicator buffers
-            const int start_candle      = 0;
-            const int required_candle  = 3; //How many candles are required to be stored in Expert
-   
-            bool fill_geo_gma = CopyBuffer(gma_handle,0,start_candle,required_candle,geo_buffer);
-            bool fill_ygma = CopyBuffer(gma_handle,1,start_candle,required_candle,ygma_buffer);
-            if(fill_geo_gma==false) Print("Error creating Geo GMA handle for symbol: ", symbol, " Error: ", GetLastError());
-            if(fill_ygma==false) Print("Error creating YGMA handle for symbol: ", symbol, " Error: ", GetLastError());
-         }
-       
-         //******************
-         //|      SSL       | 
-         //******************
-         if(ssl_handle != INVALID_HANDLE){
-            //Set symbol string and indicator buffers
-            const int start_candle      = 0;
-            const int required_candle   = 2; //How many candles are required to be stored in Expert
-     
-            bool fill_sell_ssl = CopyBuffer(ssl_handle,3,start_candle,required_candle,sell_ssl_buffer);
-            bool fill_buy_ssl = CopyBuffer(ssl_handle,2,start_candle,required_candle,buy_ssl_buffer);
-            if(fill_sell_ssl == false) Print("Error creating sell SSL handle for symbol: ", symbol, " Error: ", GetLastError());
-            if(fill_buy_ssl == false) Print("Error creating buy SSL handle for symbol: ", symbol, " Error: ", GetLastError());
-         }
-    
-      
-       }
-       
        //**************************************
        // Method to release indicator Handles |
        //**************************************
@@ -486,8 +285,236 @@ class CurrencyData {
        }     
 };
 
+/*********************************
+|  Inheritance class constructor |
+*********************************/
+CurrencyData::CurrencyData(string _sym){
+   symbol = _sym;
+   ticket_number = 0;
+   atr_handle = INVALID_HANDLE;
+   gma_handle = INVALID_HANDLE;
+   ssl_handle = INVALID_HANDLE;
+   ArraySetAsSeries(atr_buffer, true); // Treat array as series, most recent elements are placed at the beginning of the array index 0
+   ArraySetAsSeries(geo_buffer, true); // Treat array as series
+   ArraySetAsSeries(ygma_buffer, true); // Treat array as series
+   ArraySetAsSeries(sell_ssl_buffer, true); // Treat array as series
+   ArraySetAsSeries(buy_ssl_buffer, true); // Treat array as series
+   last_trade_direction = 0; // Initialize with no direction
+}
+
+//**************************************
+// Helper Method Retrieve Trade Ticket |
+//**************************************
+ulong CurrencyData::getTradeTicket(){
+   return ticket_number;
+}
+
+//**********************************            
+// Initialize Indicator Handles    |
+// In Object Oriented Programs,    |
+// The public members of a class   |
+// can access the private members  |
+//**********************************
+void CurrencyData::initIndicatorHandles(){
+   //********************
+   //|   ATR Handle     |
+   //********************
+   atr_handle = iATR(symbol,PERIOD_D1,g_atr_period);
+   Print("Handle for ATR /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+   //Error Handling
+   if(atr_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+    
+   //********************
+   //|   GMA HANDLE     |
+   //********************
+   string g_gma_name = "Market\\YGMA.ex5";
+   gma_handle = iCustom(symbol, PERIOD_D1, g_gma_name,5,12);
+   Print("Handle for GMA /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+   //Error Handling
+   if(gma_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+         
+   //********************
+   //|   SSL Handle     |
+   //********************
+   string g_ssl_name = "Market\\ssl.ex5";
+   ssl_handle = iCustom(symbol,PERIOD_D1,g_ssl_name,13,true,0);
+   Print("Handle for SSL /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+   //Error Handling
+   if(ssl_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+         
+         /*
+         //********************
+         //|   WAE HANDLE     |
+         //********************
+         g_wae_name = "Market\\waddah_attar_explosion.ex5";
+         wae_handle = iCustom(symbol, PERIOD_D1, g_wae_name,20,40,20,2.0,150,400,15,150,false,2,false,false,false,false);
+         Print("Handle for WAE /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+         //Error Handling
+         if(wae_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+       
+         //********************
+         //|   RVI HANDLE     |
+         //********************
+         g_rvi_name = "Market\\rvi.ex5";
+         rvi_handle = iCustom(symbol, PERIOD_D1, g_rvi_name,10);
+         Print("Handle for RVI /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+         //Error Handling
+         if(rvi_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+             */   
+}
+
+/******************************|
+//Function to update indicators|
+*******************************/
+void CurrencyData::updateIndicators(){
+   //******************
+   //|      ATR       | 
+   //******************
+   if(atr_handle != INVALID_HANDLE){
+      //Set symbol string and indicator buffer
+      const int start_candle     = 0;
+      const int required_candles = 3; //How many candles are required to be stored in Expert 
+
+      //Indicator Variables and Buffers
+      const int index_atr        = 0; //ATR Value
+            
+      //Populate buffers for ATR Value; check errors
+      bool fill_atr = CopyBuffer(atr_handle,index_atr,start_candle,required_candles,atr_buffer); //Copy buffer uses oldest as 0 (reversed)
+      if(fill_atr==false) Print("Error creating ATR handle for symbol: ", symbol, " Error: ", GetLastError());
+
+             //Find ATR Value for Candle '1' Only
+             //double current_atr   = NormalizeDouble(atr_buffer[1],5);
+    }
+         
+    //******************
+    //|      GMA       | 
+    //******************
+    if(gma_handle != INVALID_HANDLE){
+      //Set symbol string and indicator buffers
+      const int start_candle      = 0;
+      const int required_candle  = 3; //How many candles are required to be stored in Expert
+   
+      bool fill_geo_gma = CopyBuffer(gma_handle,0,start_candle,required_candle,geo_buffer);
+      bool fill_ygma = CopyBuffer(gma_handle,1,start_candle,required_candle,ygma_buffer);
+      if(fill_geo_gma==false) Print("Error creating Geo GMA handle for symbol: ", symbol, " Error: ", GetLastError());
+      if(fill_ygma==false) Print("Error creating YGMA handle for symbol: ", symbol, " Error: ", GetLastError());
+    }
+       
+    //******************
+    //|      SSL       | 
+    //******************
+    if(ssl_handle != INVALID_HANDLE){
+      //Set symbol string and indicator buffers
+      const int start_candle      = 0;
+      const int required_candle   = 2; //How many candles are required to be stored in Expert
+     
+      bool fill_sell_ssl = CopyBuffer(ssl_handle,3,start_candle,required_candle,sell_ssl_buffer);
+      bool fill_buy_ssl = CopyBuffer(ssl_handle,2,start_candle,required_candle,buy_ssl_buffer);
+      if(fill_sell_ssl == false) Print("Error creating sell SSL handle for symbol: ", symbol, " Error: ", GetLastError());
+      if(fill_buy_ssl == false) Print("Error creating buy SSL handle for symbol: ", symbol, " Error: ", GetLastError());
+    }
+} 
+       
+
+/******************************************************
+|  Order Execution Class                              |
+|     Encapsulates the logic for placing,             |
+|     modifying, and closing orders                   |
+|     Provides an interface to the trading platforms  | 
+|     order functions                                 |
+*******************************************************/
+class OrderExecutor {
+public:
+   bool checkOpenOrders();
+   bool checkPosition();
+   void updateLastTradeDirection();
+   bool checkForContinuationTrade();
+}
+
+/************************************|
+| Helper Method to check open orders |
+*************************************/
+bool OrderExecutor::checkOpenOrders(void){
+   int total_orders = OrdersTotal();
+   for(int i=0; i < total_orders; i++){
+      ulong ticket = OrderGetTicket(i);
+      if(OrderSelect(ticket) && OrderGetString(ORDER_SYMBOL) == symbol){
+         ticket_number = ticket;
+         return true;
+      }
+   }
+   return false;
+}
+
+//***************************************************
+//  Method to select and check the current position |
+//***************************************************
+bool OrderExecutor::checkPosition(){
+   if(PositionSelect(symbol)){
+      ulong position_ticket = PositionGetInteger(POSITION_TICKET);
+      ticket_number = position_ticket;
+      return true;
+   }
+   return false;
+}
+
+//***********************************
+//  Update the last trade direction |
+//***********************************
+void OrderExecutor::updateLastTradeDirection(){
+   int total_history_orders = HistoryOrdersTotal();
+   if(total_history_orders > 0){
+      ulong last_order_ticket = HistoryOrderGetTicket(total_history_orders - 1);
+      if(HistoryOrderSelect(last_order_ticket)){
+         int order_type = HistoryOrderGetInteger(last_order_ticket, ORDER_TYPE);
+         if(order_type == ORDER_TYPE_BUY){
+            last_trade_direction = 1; //BUY
+         } else if(order_type == ORDER_TYPE_SELL){
+            last_trade_direction = -1; //SELL
+         }
+       }
+    }
+}
+
+//*************************************
+//   Check for continuation trade     |
+//*************************************
+bool OrderExecutor::checkForContinuationTrade(){
+   //Example logic: continuation trade if there was not a cross of the baseline
+   double current_gma = geo_buffer[1]; //Bar that just closed
+   double current_ygma = ygma_buffer[1]; //Bar that just closed
+   double prior_gma = geo_buffer[0];
+   double price = iClose(Symbol(), Period(), 1);
+           
+   // First Condition:
+   //     Continuation LONG  if the last trade 1 was long and the Baseline never crossed short
+   //     Continuation SHORT if the last trade -1 was short and the Baseline never crossed long
+   // Second Condition:
+   //     Continuation LONG if the upper SSL is not empty
+   //     Continuation SHORT if the lower SSL is not empty 
+   if((price > current_gma) && (last_trade_direction == 1) || (price < current_gma) && (last_trade_direction == -1)){
+      if((sell_ssl_buffer[1] != DBL_MAX) && (buy_ssl_buffer[1] == DBL_MAX) || (buy_ssl_buffer[1] != DBL_MAX) && (sell_ssl_buffer[1] == DBL_MAX))
+         return true;
+      }
+      return false;
+}
+
 // Array to hold currency data object 
 CurrencyData* currencies[];
+
+/****************************************************
+| Money Management Class                            |
+|  Manages position sizing and risk management      |
+|  Implements logic for calculating lot sizes based | 
+|  on account balance, risk per trade               |
+*****************************************************/
+
+
+
+/*Advice use inheritance to implement specific strategies
+   and money management techniques. Use Polymorphism to 
+   switch between different trading strategies and 
+   money management techniques at run time.*/
 
 //Setup Variables
 input int                InpMagicNumber  = 2000001;     //Unique identifier for this expert advisor
