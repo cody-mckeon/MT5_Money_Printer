@@ -239,54 +239,20 @@ class CurrencyData {
       
     
     public:
-       CurrencyData();
-       getTradeTicket();
-       initIndicatorHandles();
-       updateIndicators();
-        
-       //**************************************
-       // Method to release indicator Handles |
-       //**************************************
-       void releaseIndicatorHandles(){
-         if (atr_handle != INVALID_HANDLE){
-            IndicatorRelease(atr_handle);
-            atr_handle = INVALID_HANDLE;
-         }
-       }
-       
-       // Get the ATR Value
-       double getAtr(int shift){
-         if(shift < ArraySize(atr_buffer)) return atr_buffer[shift];
-         else {
-            Print("Invalid shift value for ATR: ", shift);
-            return 0.0;
-         }
-       }
-       
-       //****************
-       // Get the Symbol|
-       //****************
-       string getSymbol(){
-         return symbol;
-       }
-       
-       //***************
-       // Get Buy SSL  |
-       //***************
-       double getBuySSL(int shift){
-         return buy_ssl_buffer[shift];
-       }
-       
-       //***************
-       // Get Sell SSL  |
-       //***************
-       double getSellSSL(int shift){
-         return sell_ssl_buffer[shift];
-       }     
+       CurrencyData(string _sym);
+       ulong getTradeTicket();
+       void initIndicatorHandles();
+       void updateIndicators();
+       void releaseIndicatorHandles(); 
+       double getAtr(int shift);
+       string getSymbol();
+       double getBuySSL(int shift);
+       double getSellSSL(int shift);
+       int getLastTradeDirection();    
 };
 
 /*********************************
-|  Inheritance class constructor |
+|  class constructor |
 *********************************/
 CurrencyData::CurrencyData(string _sym){
    symbol = _sym;
@@ -323,7 +289,10 @@ void CurrencyData::initIndicatorHandles(){
    Print("Handle for ATR /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
    //Error Handling
    if(atr_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-    
+   
+   /******************************
+   |      Baselines              |
+   *******************************/
    //********************
    //|   GMA HANDLE     |
    //********************
@@ -385,7 +354,9 @@ void CurrencyData::updateIndicators(){
              //Find ATR Value for Candle '1' Only
              //double current_atr   = NormalizeDouble(atr_buffer[1],5);
     }
-         
+    /***************************************
+    |       Baseline
+    ****************************************/    
     //******************
     //|      GMA       | 
     //******************
@@ -399,7 +370,9 @@ void CurrencyData::updateIndicators(){
       if(fill_geo_gma==false) Print("Error creating Geo GMA handle for symbol: ", symbol, " Error: ", GetLastError());
       if(fill_ygma==false) Print("Error creating YGMA handle for symbol: ", symbol, " Error: ", GetLastError());
     }
-       
+    /****************************************
+    |    Confirmation 1
+    *****************************************/
     //******************
     //|      SSL       | 
     //******************
@@ -413,8 +386,56 @@ void CurrencyData::updateIndicators(){
       if(fill_sell_ssl == false) Print("Error creating sell SSL handle for symbol: ", symbol, " Error: ", GetLastError());
       if(fill_buy_ssl == false) Print("Error creating buy SSL handle for symbol: ", symbol, " Error: ", GetLastError());
     }
+}
+
+/*****************************
+|      Release Indicators    |
+******************************/ 
+void CurrencyData::releaseIndicatorHandles(){
+   if (atr_handle != INVALID_HANDLE){
+      IndicatorRelease(atr_handle);
+      atr_handle = INVALID_HANDLE;
+   }
+}
+
+/*********************
+|  Get the ATR Value |
+**********************/
+double CurrencyData::getAtr(int shift){
+   if(shift < ArraySize(atr_buffer)) return atr_buffer[shift];
+   else {
+      Print("Invalid shift value for ATR: ", shift);
+      return 0.0;
+   }
+}
+
+//****************
+// Get the Symbol|
+//****************
+string CurrencyData::getSymbol(){
+   return symbol;
+}
+
+//***************
+// Get Buy SSL  |
+//***************
+double CurrencyData::getBuySSL(int shift){
+   return buy_ssl_buffer[shift];
+}
+
+//***************
+// Get Sell SSL  |
+//***************
+double CurrencyData::getSellSSL(int shift){
+   return sell_ssl_buffer[shift];
 } 
-       
+
+/****************************
+|  Get Last Trade Direction |
+****************************/
+int CurrencyData::getLastTradeDirection(){
+   return last_trade_direction;
+}
 
 /******************************************************
 |  Order Execution Class                              |
@@ -424,22 +445,30 @@ void CurrencyData::updateIndicators(){
 |     order functions                                 |
 *******************************************************/
 class OrderExecutor {
+private:
+   CurrencyData *currencyData;
+   double optimalLotSize(string symbol, double price, double stop_loss);
 public:
    bool checkOpenOrders();
    bool checkPosition();
    void updateLastTradeDirection();
    bool checkForContinuationTrade();
-}
+   void processTradeOpen(ENUM_ORDER_TYPE order_type, double current_atr, string current_symbol);
+   OrderExecutor(CurrencyData *curData);
+};
+
+OrderExecutor::OrderExecutor(CurrencyData *curData) : currencyData(curData) {}
 
 /************************************|
 | Helper Method to check open orders |
 *************************************/
 bool OrderExecutor::checkOpenOrders(void){
    int total_orders = OrdersTotal();
+   int ticket_num = currencyData->getTradeTicket();
    for(int i=0; i < total_orders; i++){
       ulong ticket = OrderGetTicket(i);
       if(OrderSelect(ticket) && OrderGetString(ORDER_SYMBOL) == symbol){
-         ticket_number = ticket;
+         ticket_num = ticket;
          return true;
       }
    }
@@ -450,9 +479,10 @@ bool OrderExecutor::checkOpenOrders(void){
 //  Method to select and check the current position |
 //***************************************************
 bool OrderExecutor::checkPosition(){
+   int ticket_num = currencyData->getTradeTicket();
    if(PositionSelect(symbol)){
       ulong position_ticket = PositionGetInteger(POSITION_TICKET);
-      ticket_number = position_ticket;
+      ticket_num = position_ticket;
       return true;
    }
    return false;
@@ -463,14 +493,15 @@ bool OrderExecutor::checkPosition(){
 //***********************************
 void OrderExecutor::updateLastTradeDirection(){
    int total_history_orders = HistoryOrdersTotal();
+   int last_trade = currencyData->getLastTradeDirection();
    if(total_history_orders > 0){
       ulong last_order_ticket = HistoryOrderGetTicket(total_history_orders - 1);
       if(HistoryOrderSelect(last_order_ticket)){
          int order_type = HistoryOrderGetInteger(last_order_ticket, ORDER_TYPE);
          if(order_type == ORDER_TYPE_BUY){
-            last_trade_direction = 1; //BUY
+            last_trade = 1; //BUY
          } else if(order_type == ORDER_TYPE_SELL){
-            last_trade_direction = -1; //SELL
+            last_trade = -1; //SELL
          }
        }
     }
@@ -485,19 +516,128 @@ bool OrderExecutor::checkForContinuationTrade(){
    double current_ygma = ygma_buffer[1]; //Bar that just closed
    double prior_gma = geo_buffer[0];
    double price = iClose(Symbol(), Period(), 1);
-           
+   int last_trade = currencyData->getLastTradeDirection();
+   double sell_ssl = currencyData->getSellSSL(1); 
+   double buy_ssl = currencyData->getBuySSL(1);      
    // First Condition:
    //     Continuation LONG  if the last trade 1 was long and the Baseline never crossed short
    //     Continuation SHORT if the last trade -1 was short and the Baseline never crossed long
    // Second Condition:
    //     Continuation LONG if the upper SSL is not empty
    //     Continuation SHORT if the lower SSL is not empty 
-   if((price > current_gma) && (last_trade_direction == 1) || (price < current_gma) && (last_trade_direction == -1)){
-      if((sell_ssl_buffer[1] != DBL_MAX) && (buy_ssl_buffer[1] == DBL_MAX) || (buy_ssl_buffer[1] != DBL_MAX) && (sell_ssl_buffer[1] == DBL_MAX))
+   if((price > current_gma) && (last_trade == 1) || (price < current_gma) && (last_trade == -1)){
+      if((sell_ssl != DBL_MAX) && (buy_ssl == DBL_MAX) || (buy_ssl != DBL_MAX) && (sell_ssl == DBL_MAX)){
          return true;
       }
       return false;
+   }
+   return false;
 }
+
+//***************************************
+//Processes open trades for buy and sell|
+//***************************************
+void OrderExecutor::processTradeOpen(ENUM_ORDER_TYPE order_type, double current_atr, string current_symbol)
+{
+   //Set symbol string and variables
+   double price           = 0;
+   double stop_loss_price   = 0;
+   double take_profit_price = 0;
+   double spread = SymbolInfoDouble(current_symbol, SYMBOL_ASK) - SymbolInfoDouble(current_symbol, SYMBOL_BID);
+   
+   //Get Previous Bars information for Pending Stop Orders
+   CopyRates(current_symbol, PERIOD_CURRENT, 0, 2, g_bar);
+   double high = g_bar[1].high;
+   double low = g_bar[1].low;
+   
+   //Get price, stop loss, take profit for open and close orders
+   if(order_type == ORDER_TYPE_BUY_STOP || order_type == ORDER_TYPE_BUY)
+   {
+      price             = NormalizeDouble(SymbolInfoDouble(current_symbol, SYMBOL_ASK), Digits());
+      stop_loss_price   = NormalizeDouble(price - current_atr*AtrLossMulti, Digits());
+      take_profit_price = NormalizeDouble(price + current_atr*AtrProfitMulti, Digits());
+   }
+   else if(order_type == ORDER_TYPE_SELL_STOP || order_type == ORDER_TYPE_SELL)
+   {
+      price             = NormalizeDouble(SymbolInfoDouble(current_symbol, SYMBOL_BID), Digits());
+      stop_loss_price   = NormalizeDouble(price + current_atr*AtrLossMulti, Digits());
+      take_profit_price = NormalizeDouble(price - current_atr*AtrProfitMulti, Digits());  
+   }
+   
+   //Get lot size
+   double lot_size = optimalLotSize(current_symbol,price,stop_loss_price);
+   lot_size = (int)(lot_size/SymbolInfoDouble(current_symbol,SYMBOL_VOLUME_STEP)) * SymbolInfoDouble(current_symbol,SYMBOL_VOLUME_STEP);
+   lot_size = MathMin(lot_size,SymbolInfoDouble(current_symbol,SYMBOL_VOLUME_MAX));
+   lot_size = MathMax(lot_size,SymbolInfoDouble(current_symbol,SYMBOL_VOLUME_MIN));
+   Print("Lots Trade Open: ", lot_size);
+   
+   //Exit any trades that are currently open. Enter new trade.
+   Trade.PositionClose(current_symbol);
+   
+   if(order_type == ORDER_TYPE_BUY_STOP)
+   {
+      Trade.BuyStop(lot_size, high+spread, current_symbol, stop_loss_price, take_profit_price, ORDER_TIME_GTC);
+   }
+   else if(order_type == ORDER_TYPE_SELL_STOP)
+   {
+      Trade.SellStop(lot_size, low-spread, current_symbol, stop_loss_price, take_profit_price, ORDER_TIME_GTC);
+   } else {
+      //For Market Orders
+      Trade.PositionOpen(current_symbol, order_type, lot_size, price, stop_loss_price, take_profit_price, InpTradeComment);
+      //Used for market order
+      //Get Position Ticket Number
+      //PositionSelect(current_symbol);
+      //ulong  Ticket = PositionGetTicket(0);
+   }
+   
+   //Add in any error handling
+   Print("Trade Processed For ", current_symbol," OrderType ", order_type, " Lot Size ", lot_size, " Current Atr: ", current_atr);
+   Print("Volume ", PositionGetDouble(POSITION_VOLUME));
+   Print("Close Volume ", PositionGetDouble(POSITION_VOLUME) / 2);
+   Print("Minimum Volume ", SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MIN));
+}
+
+//*****************************************************************************
+//Finds the optimal lot size for the trade - Orghard Forex mod by Dillon Grech|
+//https://www.youtube.com/watch?v=Zft8X3htrcc&t=724s                          |
+//*****************************************************************************
+double OrderExecutor::optimalLotSize(string current_symbol, double entry_price, double stop_loss)
+{
+   //Set symbol string and calculate point value
+   double tick_size  = SymbolInfoDouble(current_symbol,SYMBOL_TRADE_TICK_SIZE);
+   double tick_value = SymbolInfoDouble(current_symbol,SYMBOL_TRADE_TICK_VALUE);
+   
+   if(SymbolInfoInteger(current_symbol,SYMBOL_DIGITS) <= 3)
+      tick_value = tick_value / 100;
+   double point_amount    = SymbolInfoDouble(current_symbol,SYMBOL_POINT);
+   double ticks_per_point = tick_size / point_amount;
+   double point_value    = tick_value / ticks_per_point;
+
+   //Calculate risk based off entry and stop loss level by pips
+   double risk_points = MathAbs((entry_price - stop_loss)/tick_size);
+      
+   //Set risk model - Fixed or compounding
+   if(RiskCompounding == true)
+      GCurrentEquityRisk = AccountInfoDouble(ACCOUNT_EQUITY);
+   else
+      GCurrentEquityRisk = GStartingEquity; 
+
+   //Calculate total risk amount in dollars
+   double risk_amount = GCurrentEquityRisk * MaxLossPrc;
+
+   //Calculate lot size
+   double risk_lots   = NormalizeDouble(risk_amount /(risk_points * point_value),2);
+
+   //Print values in Journal to check if operating correctly
+   PrintFormat("TickSize=%f,TickValue=%f,PointAmount=%f,TicksPerPoint=%f,PointValue=%f,",
+                  tick_size,tick_value,point_amount,ticks_per_point,point_value);   
+   PrintFormat("EntryPrice=%f,StopLoss=%f,RiskPoints=%f,RiskAmount=%f,RiskLots=%f,",
+                  entry_price,stop_loss,risk_points,risk_amount,risk_lots);   
+
+   //Return optimal lot size
+   return risk_lots;
+}
+
 
 // Array to hold currency data object 
 CurrencyData* currencies[];
@@ -725,7 +865,7 @@ int OnInit()
          currencies[i] = new CurrencyData(currency_pairs[i]);
          // Initialize indicator handles
          // For this symbol 
-         currencies[i].InitIndicatorHandles();
+         currencies[i].initIndicatorHandles();
       }
       
       return(INIT_SUCCEEDED);
@@ -776,8 +916,10 @@ void OnTick()
    //Declare Variables     
    TicksReceivedCount++; //Counts the number of ticks received
    
+   
    // Start looping through the currency pairs and apply strategy to look for trades
-   for (int i = 0; i <= ArraySize(currencies); i++){       
+   for (int i = 0; i <= ArraySize(currencies); i++){  
+      OrderExecutor orderExecutor(&currencies[i]);     
       //Checks for new candle
       bool is_new_candle = false;
       if(TimeLastTickProcessed != iTime(currencies[i].getSymbol(),PERIOD_D1,0))
@@ -798,9 +940,22 @@ void OnTick()
          //Counts the number of ticks processed
          TicksProcessedCount++;
          
+         // Place the trade for long if SSL is long or short
+         if((orderExecutor.getBuySSL(0) != DBL_MAX) && (orderExecutor.getSellSSL(0) == DBL_MAX)){
+            if(g_stop_order) orderExecutor.processTradeOpen(ORDER_TYPE_BUY_STOP, currencies[i].getAtr(0), currencies[i].getSymbol());
+            else if(g_market_order) orderExecutor.processTradeOpen(ORDER_TYPE_BUY, currencies[i].getAtr(0), currencies[i].getSymbol());
+         } else if((currencies[i].getSellSSL(1) != DBL_MAX) && (currencies[i].getBuySSL(1) == DBL_MAX)){
+            if(g_stop_order) orderExecutor.processTradeOpen(ORDER_TYPE_SELL_STOP, currencies[i].getAtr(0), currencies[i].getSymbol());
+            else if(g_market_order) orderExecutor.processTradeOpen(ORDER_TYPE_SELL, currencies[i].getAtr(0), currencies[i].getSymbol());
+         }
+         
+       }
+    }
+ }  
+         /*
          // A Continuation trade states that a trade has happened in the past and there
          // was no crossing of the base line. 
-         if (!currencies[i].checkPosition() && !currencies[i].checkOpenOrders()) 
+         if (!orderExecutor.checkPosition() && !orderExecutor.checkOpenOrders()) 
          {            
             // Set the Global Variable to indicate partial close
             g_partial_close = 0;
@@ -812,9 +967,9 @@ void OnTick()
             currencies[i].updateLastTradeDirection();
             
             // Continuation Trade Logic
-            if(currencies[i].checkForContinuationTrade()){
+            if(orderExecutor.checkForContinuationTrade()){
                // Place the trade for long if SSL is long or short
-               if((currencies[i].getBuySSL(0) != DBL_MAX) && (currencies[i].getSellSSL(0) == DBL_MAX)){
+               if((orderExecutor.getBuySSL(0) != DBL_MAX) && (orderExecutor.getSellSSL(0) == DBL_MAX)){
                   if(g_stop_order) ProcessTradeOpen(ORDER_TYPE_BUY_STOP, currencies[i].getAtr(0), currencies[i].getSymbol());
                   else if(g_market_order) ProcessTradeOpen(ORDER_TYPE_BUY, currencies[i].getAtr(0), currencies[i].getSymbol());
                } else if((currencies[i].getSellSSL(1) != DBL_MAX) && (currencies[i].getBuySSL(1) == DBL_MAX)){
@@ -934,9 +1089,9 @@ void OnTick()
                         all_currency_data[i].g_continuation_trade = "No continuation";
                      }  
                  }
-              }*/
+              }
             
-      /* 
+       
       //Initiate String for indicatorMetrics Variable. This will reset variable each time OnTick function runs.
       string indicator_metrics = "";  
       StringConcatenate(indicator_metrics,symbol," | Last Processed: ",TimeLastTickProcessed);
@@ -1243,7 +1398,7 @@ double stopLossToPips(double entry_price, double stop_loss_price, string symbol)
    
    return stop_loss_pips;
 }
-
+/*
 //***************************************
 //Processes open trades for buy and sell|
 //***************************************
@@ -1347,7 +1502,7 @@ double optimalLotSize(string current_symbol, double entry_price, double stop_los
    //Return optimal lot size
    return risk_lots;
 }
-
+*/
  /*
 //+------------------------------------------------------------------+
 //+------------------------------------------------------------------+
