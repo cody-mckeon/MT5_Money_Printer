@@ -147,22 +147,14 @@
 //|   Retrieveal of the ticket numbers for both orders and positions
 //|   Methods to Handle the Task.
 //|   On line 708 Get the last trade direction to determine how to place the continuation
+//| Patch Notes 16 
+//|   Abstract Base Classes: Define abstract base classes for indicators and strategies
+//|   Inheritance: Create Derived classes for specific indicators and strategies.
+//|   Polymorphism: Use polymorphic behavior to switch between different strategies and indicators at runtime.
+//|   Why Use Inheritance and Polymorphism?
+//|   Inheritance and polymorphism allow you to create a more flexible system where different trading strategies, indicator sets, or risk management techniques can be implemented as derived classes. This means you can easily switch between different strategies or add new ones without changing the core architecture.
 //+------------------------------------------------------------------+
-#property copyright "Cody McKeon"
-#property link      "https://www.mql5.com"
-#property version   "1.01"
 
-//Include Functions
-#include <Trade\Trade.mqh> //Include MQL trade object functions
-CTrade   *Trade;           //Declaire Trade as pointer to CTrade class
-
-//+------------------------------------+
-// No trade periods |
-//+------------------------------------+
-struct DateRange {
-  datetime start;
-  datetime end; 
-};
 
 //+------------------------------------------------------+
 //| Structure to hold indicator data for a currency pair +
@@ -191,251 +183,418 @@ struct DateRange {
 
 currencyData all_currency_data[];*/
 //ATR Handle and Variables
-int g_atr_period  = 10;
 
-/******************************************************************|
-// Class for the currency indicator data and position information  |
-//    Indicator Management Class                                   |
-//    Manages different indicators and provides interface to       |
-//    Abstract Base Class with Inheritance to functions            |
-*******************************************************************/
+#property copyright "Cody McKeon"
+#property link      "https://www.mql5.com"
+#property version   "1.01"
 
-class CurrencyData {
-   private:
-      string symbol;
-      ulong ticket_number;  // Trade Ticket Number
-      int    atr_handle;    // ATR
-      double atr_buffer[];  //[prior,current confirmed,not confirmed]
-      int    gma_handle;    //GMA
-      double geo_buffer[];
-      double ygma_buffer[];
-      int    ssl_handle;       //SSL
-      double sell_ssl_buffer[];
-      double buy_ssl_buffer[];
-      
-      int last_trade_direction; //1 for BUY, -1 for SELL, 0 for no direction
-      
-   /*
-      int ssl_handle; // SSL
-      string open_signal_ssl;
-      string g_ssl_name = ""; 
-   
-      int wae_handle;// WAE
-      string open_signal_wae;
-      string g_wae_name = "";
-   
-      int gma_handle;// GMA
-      string open_signal_gma;
-      string g_gma_name = "";
-   
-      int rvi_handle;// RVI
-      string open_signal_rvi;
-      string g_rvi_name = "";
-   
-      int g_order_type; // The Order Type
-      bool g_continuation = true; // For Continuation Trades
-      string g_continuation_trade = "na";
-      */
-      
-    
-    public:
-       CurrencyData(string _sym);
-       ulong getTradeTicket();
-       void initIndicatorHandles();
-       void updateIndicators();
-       void releaseIndicatorHandles(); 
-       double getAtr(int shift);
-       string getSymbol();
-       double getBuySSL(int shift);
-       double getSellSSL(int shift);
-       int getLastTradeDirection();    
+//Include Functions
+#include <Trade\Trade.mqh> //Include MQL trade object functions
+CTrade   *Trade;           //Declaire Trade as pointer to CTrade class
+
+// Constant for one day in seconds
+const int ONE_DAY_SECONDS = 86400;
+
+//+------------------------------------+
+// No trade periods |
+//+------------------------------------+
+struct DateRange {
+  datetime start;
+  datetime end; 
 };
 
-/*********************************
-|  class constructor |
-*********************************/
-CurrencyData::CurrencyData(string _sym){
-   symbol = _sym;
-   ticket_number = 0;
-   atr_handle = INVALID_HANDLE;
-   gma_handle = INVALID_HANDLE;
-   ssl_handle = INVALID_HANDLE;
-   ArraySetAsSeries(atr_buffer, true); // Treat array as series, most recent elements are placed at the beginning of the array index 0
-   ArraySetAsSeries(geo_buffer, true); // Treat array as series
-   ArraySetAsSeries(ygma_buffer, true); // Treat array as series
-   ArraySetAsSeries(sell_ssl_buffer, true); // Treat array as series
-   ArraySetAsSeries(buy_ssl_buffer, true); // Treat array as series
-   last_trade_direction = 0; // Initialize with no direction
-}
+/****************************************************
+|         Refactor V2 - Abstract Base Classes       |
+|                    Risk Management                |
+*****************************************************/
 
-//**************************************
-// Helper Method Retrieve Trade Ticket |
-//**************************************
-ulong CurrencyData::getTradeTicket(){
-   return ticket_number;
-}
+class RiskManagement {
+public:
+    virtual double calculateRiskExposure() = 0; // Pure virtual function
+    virtual bool canProceedWithTrade(double availableRisk) = 0; // Pure virtual function to check if trading can proceed
+    virtual ~RiskManagement() {}
+};
 
-//**********************************            
-// Initialize Indicator Handles    |
-// In Object Oriented Programs,    |
-// The public members of a class   |
-// can access the private members  |
-//**********************************
-void CurrencyData::initIndicatorHandles(){
-   //********************
-   //|   ATR Handle     |
-   //********************
-   atr_handle = iATR(symbol,PERIOD_D1,g_atr_period);
-   Print("Handle for ATR /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
-   //Error Handling
-   if(atr_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-   
-   /******************************
-   |      Baselines              |
-   *******************************/
-   //********************
-   //|   GMA HANDLE     |
-   //********************
-   string g_gma_name = "Market\\YGMA.ex5";
-   gma_handle = iCustom(symbol, PERIOD_D1, g_gma_name,5,12);
-   Print("Handle for GMA /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
-   //Error Handling
-   if(gma_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+/****************************************************
+|         Refactor V2 - Abstract Base Classes       |
+|                    Volatility Management          |
+*****************************************************/
+
+class VolatilityManagement {
+public:
+    virtual bool isTradeAllowed() = 0; // Pure virtual function
+    virtual bool isNoTradeDay(datetime today) = 0; // Pure virtual function
+    virtual ~VolatilityManagement() {}
+};
+
+/****************************************************
+|         Refactor V2 - Abstract Base Classes       |
+|                    Indicator                      |
+*****************************************************/
+class Indicator {
+protected:
+   string symbol;
+   int handle;
+public:
+   Indicator(string_symbol) : symbol(_symbol), handle(INVALID_HANDLE) {}
+   virtual ~Indicator() {}
+   virtual void init() = 0;
+   virtual void update() = 0;
+   virtual void release() = 0;
+};
+
+/****************************************************
+|         Refactor V2 - Abstract Base Classes       |
+|                    Strategy                       |
+*****************************************************/
+class Strategy {
+protected:
+   TradeSystemManager* tradeSystemManager;
+public:
+   Strategy(TradeSystemManager* _tradeSystemManager) : tradeSystemManager(_tradeSystemManager) {}
+   virtual ~Strategy() {}
+   virtual void execute() = 0;
+};
+
+/****************************************************
+|         Refactor V2 - Risk Derived Classes        |
+|            FixedPercentageRisk                    |
+*****************************************************/
+
+class FixedPercentageRisk : public RiskManagement {
+private:
+    double maxLossPercentage; // Maximum allowable loss as a percentage of account balance
+public:
+    FixedPercentageRisk(double _maxLossPercentage) : maxLossPercentage(_maxLossPercentage) {}
+
+    // Overridden calculateRiskExposure method
+    double calculateRiskExposure() override {
+         double total_risk = 0.0;
+         double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+        
+         // Loop through all open positions
+         for(int i = 0; i < PositionsTotal(); i++) {
+            ulong ticket = PositionGetTicket(i);
+            if(PositionSelectByTicket(ticket)) {
+               if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY || PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL){
+                  string symbol = PositionGetString(POSITION_SYMBOL);
+                  double volume = PositionGetDouble(POSITION_VOLUME);
+                  double stop_loss = PositionGetDouble(POSITION_SL);
+                  double price = PositionGetDouble(POSITION_PRICE_OPEN);
+                  //Calculate the pip value
+                  double pip_value = getPipValue(symbol, volume);
+                  double stop_loss_pips = stopLossToPips(price, stop_loss, symbol);
+                  double risk = volume * stop_loss_pips * pip_value;
+               
+                  total_risk += risk; 
+               }
+            }
+         }
          
-   //********************
-   //|   SSL Handle     |
-   //********************
-   string g_ssl_name = "Market\\ssl.ex5";
-   ssl_handle = iCustom(symbol,PERIOD_D1,g_ssl_name,13,true,0);
-   Print("Handle for SSL /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
-   //Error Handling
-   if(ssl_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+         //Calculate the risk as a percentage of the account balance
+         double total_risk_percentage = (total_risk / account_balance) * 100.0;
          
-         /*
-         //********************
-         //|   WAE HANDLE     |
-         //********************
-         g_wae_name = "Market\\waddah_attar_explosion.ex5";
-         wae_handle = iCustom(symbol, PERIOD_D1, g_wae_name,20,40,20,2.0,150,400,15,150,false,2,false,false,false,false);
-         Print("Handle for WAE /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
-         //Error Handling
-         if(wae_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-       
-         //********************
-         //|   RVI HANDLE     |
-         //********************
-         g_rvi_name = "Market\\rvi.ex5";
-         rvi_handle = iCustom(symbol, PERIOD_D1, g_rvi_name,10);
-         Print("Handle for RVI /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
-         //Error Handling
-         if(rvi_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
-             */   
-}
-
-/******************************|
-//Function to update indicators|
-*******************************/
-void CurrencyData::updateIndicators(){
-   //******************
-   //|      ATR       | 
-   //******************
-   if(atr_handle != INVALID_HANDLE){
-      //Set symbol string and indicator buffer
-      const int start_candle     = 0;
-      const int required_candles = 3; //How many candles are required to be stored in Expert 
-
-      //Indicator Variables and Buffers
-      const int index_atr        = 0; //ATR Value
-            
-      //Populate buffers for ATR Value; check errors
-      bool fill_atr = CopyBuffer(atr_handle,index_atr,start_candle,required_candles,atr_buffer); //Copy buffer uses oldest as 0 (reversed)
-      if(fill_atr==false) Print("Error creating ATR handle for symbol: ", symbol, " Error: ", GetLastError());
-
-             //Find ATR Value for Candle '1' Only
-             //double current_atr   = NormalizeDouble(atr_buffer[1],5);
+         Print("Calculating risk exposure based on fixed percentage");
+         return total_risk_percentage;
     }
-    /***************************************
-    |       Baseline
-    ****************************************/    
-    //******************
-    //|      GMA       | 
-    //******************
-    if(gma_handle != INVALID_HANDLE){
-      //Set symbol string and indicator buffers
-      const int start_candle      = 0;
-      const int required_candle  = 3; //How many candles are required to be stored in Expert
+    
+    bool canProceedWithTrade(double availableRisk) override {
+        // Logic to determine if trading can proceed based on available risk
+        return availableRisk > 0.005;
+    }
+
+    // Helper function to calculate pip value
+    double getPipValue(string symbol, double volume) {
+        // Placeholder logic for pip value calculation
+        return 0.1 * volume; // Placeholder example
+    }
+
+    // Helper function to convert stop loss to pips
+    double stopLossToPips(double price, double stop_loss, string symbol) {
+        // Placeholder logic for stop loss conversion
+        return MathAbs(price - stop_loss) / SymbolInfoDouble(symbol, SYMBOL_POINT); // Placeholder example
+    }
+ 
+};
+
+/****************************************************
+|         Refactor V2 - Risk Derived Classes        |
+|            KellyCriterionRisk                     |
+*****************************************************/
+
+class KellyCriterionRisk : public RiskManagement {
+private:
+    double winRate; // Historical win rate of the strategy
+    double rewardRiskRatio; // Reward-to-risk ratio
+public:
+    KellyCriterionRisk(double _winRate, double _rewardRiskRatio)
+        : winRate(_winRate), rewardRiskRatio(_rewardRiskRatio) {}
+
+    // Overridden calculateRiskExposure method
+    double calculateRiskExposure() override {
+        // Calculate risk exposure based on Kelly Criterion formula
+        // Implement specific risk management logic here
+        Print("Calculating risk exposure based on Kelly Criterion");
+        return 0.0; // Placeholder return value
+    }
+};
+
+/****************************************************
+|         Refactor V2 - Volatility Derived Classes  |
+|            News Based Volatility                  |
+*****************************************************/
+
+class NewsBasedVolatility : public VolatilityManagement {
+private:
+    DateRange* noTradePeriods; // Array of no-trade periods based on news events
+    int noTradePeriodCount; // Count of no-trade periods
+public:
+    NewsBasedVolatility(DateRange* _noTradePeriods, int _noTradePeriodCount)
+        : noTradePeriods(_noTradePeriods), noTradePeriodCount(_noTradePeriodCount) {}
+
+    // Overridden isTradeAllowed method
+    bool isTradeAllowed() override {
+        // Implement logic to determine if trading is allowed based on news events
+        // Example: return false if current date falls within any no-trade period
+        / Logic to determine if trading is allowed based on news events
+        datetime current_tick_date = TimeCurrent();
+        return !isNoTradeDay(current_tick_date);
+    }
+
+    // Overridden isNoTradeDay method
+    bool isNoTradeDay(datetime today) override {
+        // Implement logic to check if today is a no-trade day based on news events
+        // Example: return true if today falls within any no-trade period
+        Print("Checking if today is a no-trade day based on news events");
+        datetime stripped_today = stripTime(today);
+        for (int i = 0; i < noTradePeriodCount; i++) {
+            datetime start = stripTime(noTradePeriods[i].start);
+            datetime end = stripTime(noTradePeriods[i].end);
+            if (stripped_today >= start && stripped_today <= end) {
+                return true; // Today is a no-trade day
+            }
+        }
+        return false;
+    }
+    
+    // Helper function to strip time from datetime
+    datetime stripTime(datetime dt) {
+        MqlDateTime mdt;
+        TimeToStruct(dt, mdt);
+        mdt.hour = 0;
+        mdt.min = 0;
+        mdt.sec = 0;
+        return StructToTime(mdt);
+    }
+};
+
+
+
+/****************************************************
+|         Refactor V2 - Derived Classes             |
+|            ATR Indicator Class                    |
+*****************************************************/
+class ATRIndicator : public Indicator {
+private:
+   int atrPeriod;
+   double atrBuffer[];
+public:
+   ATRIndicator(string _symbol, int _atrPeriod) : Indicator(_symbol), atrPeriod(_atrPeriod) {
+      ArraySetAsSeries(atrBuffer, true);
+   }
    
-      bool fill_geo_gma = CopyBuffer(gma_handle,0,start_candle,required_candle,geo_buffer);
-      bool fill_ygma = CopyBuffer(gma_handle,1,start_candle,required_candle,ygma_buffer);
-      if(fill_geo_gma==false) Print("Error creating Geo GMA handle for symbol: ", symbol, " Error: ", GetLastError());
-      if(fill_ygma==false) Print("Error creating YGMA handle for symbol: ", symbol, " Error: ", GetLastError());
-    }
-    /****************************************
-    |    Confirmation 1
-    *****************************************/
-    //******************
-    //|      SSL       | 
-    //******************
-    if(ssl_handle != INVALID_HANDLE){
-      //Set symbol string and indicator buffers
-      const int start_candle      = 0;
-      const int required_candle   = 2; //How many candles are required to be stored in Expert
-     
-      bool fill_sell_ssl = CopyBuffer(ssl_handle,3,start_candle,required_candle,sell_ssl_buffer);
-      bool fill_buy_ssl = CopyBuffer(ssl_handle,2,start_candle,required_candle,buy_ssl_buffer);
-      if(fill_sell_ssl == false) Print("Error creating sell SSL handle for symbol: ", symbol, " Error: ", GetLastError());
-      if(fill_buy_ssl == false) Print("Error creating buy SSL handle for symbol: ", symbol, " Error: ", GetLastError());
-    }
-}
+   void init() override {
+      handle = iATR(symbol, PERIOD_D1, atrPeriod);
+      if(handle == INVALID_HANDLE) {
+         Print(__FUNCTION__, " > ATR handle is invalid for ", symbol);
+      }
+   }
+   
+   void update() override {
+      if(handle != INVALID_HANDLE) {
+         if(!CopyBuffer(handle, 0, 0, 3, atrBuffer)) {
+            Print("Error updating ATR buffer for ", symbol, " Error: ", GetLastError());
+         }
+      }
+   }
+   
+   void release() override {
+      if (handle != INVALID_HANDLE) {
+         IndicatorRelease(handle);
+         handle = INVALID_HANDLE;
+      }
+   }
+   
+   double getBuySignal(int shift) {
+      if (shift < ArraySize(buyBuffer))
+         return buyBuffer[shift];
+      else 
+         return DBL_MAX;
+   }
+   
+   double getSellSignal(int shift) {
+      if (shift < ArraySize(sellBuffer))
+         return sellBuffer[shift];
+      else 
+         return DBL_MAX;
+   }
+};
 
-/*****************************
-|      Release Indicators    |
-******************************/ 
-void CurrencyData::releaseIndicatorHandles(){
-   if (atr_handle != INVALID_HANDLE){
-      IndicatorRelease(atr_handle);
-      atr_handle = INVALID_HANDLE;
+/****************************************************
+|         Refactor V2 - Derived Classes             |
+|            SSL Indicator Class                    |
+*****************************************************/
+class SSLIndicator : public Indicator {
+private:
+    double buyBuffer[];
+    double sellBuffer[];
+public:
+    SSLIndicator(string _symbol) : Indicator(_symbol) {
+        ArraySetAsSeries(buyBuffer, true);
+        ArraySetAsSeries(sellBuffer, true);
+    }
+
+    void init() override {
+        handle = iCustom(symbol, PERIOD_D1, "Market\\ssl.ex5", 13, true, 0);
+        if (handle == INVALID_HANDLE) {
+            Print(__FUNCTION__, " > SSL handle is invalid for ", symbol);
+        }
+    }
+
+    void update() override {
+        if (handle != INVALID_HANDLE) {
+            if (!CopyBuffer(handle, 2, 0, 2, buyBuffer) || !CopyBuffer(handle, 3, 0, 2, sellBuffer)) {
+                Print("Error updating SSL buffer for ", symbol, " Error: ", GetLastError());
+            }
+        }
+    }
+
+    void release() override {
+        if (handle != INVALID_HANDLE) {
+            IndicatorRelease(handle);
+            handle = INVALID_HANDLE;
+        }
+    }
+
+    double getBuySignal(int shift) {
+        if (shift < ArraySize(buyBuffer))
+            return buyBuffer[shift];
+        else
+            return DBL_MAX;
+    }
+
+    double getSellSignal(int shift) {
+        if (shift < ArraySize(sellBuffer))
+            return sellBuffer[shift];
+        else
+            return DBL_MAX;
+    }
+};
+
+/**************************************************************
+|         Refactor V2 - Concrete Strategy Classes             |
+|                Simple SSL Strategy                          |
+**************************************************************/
+
+class SSLStrategy : public Strategy {
+private:
+   ATRIndicator* atrIndicator;
+   SSLIndicator* sslIndicator;
+   
+public:
+   SSLStrategy(TradeSystemManager* _tradeSystemManager, ATRIndicator* _atr, SSLIndicator* _ssl) 
+   : Strategy(_tradeSystemManager), atrIndicator(_atr), sslIndicator(_ssl) {}
+   
+   void execute() override {
+      double atr = atrIndicator->getAtr(0);
+      double buySignal = sslIndicator->getBuySignal(0);
+      double sellSignal = sslIndicator->getSellSignal(0);
+      
+      if(buySignal != DBL_MAX && sellSignal == DBL_MAX) {
+         // Place buy trade
+            OrderExecutor orderExecutor(tradeSystemManager);
+            if (g_stop_order) {
+                orderExecutor.processTradeOpen(ORDER_TYPE_BUY_STOP, atr, tradeSystemManager->getSymbol());
+            } else if (g_market_order) {
+                orderExecutor.processTradeOpen(ORDER_TYPE_BUY, atr, tradeSystemManager->getSymbol());
+            }
+      } else if (sellSignal != DBL_MAX && buySignal == DBL_MAX) {
+            // Place sell trade
+            OrderExecutor orderExecutor(tradeSystemManager);
+            if (g_stop_order) {
+                orderExecutor.processTradeOpen(ORDER_TYPE_SELL_STOP, atr, tradeSystemManager->getSymbol());
+            } else if (g_market_order) {
+                orderExecutor.processTradeOpen(ORDER_TYPE_SELL, atr, tradeSystemManager->getSymbol());
+            }
+      }
    }
 }
 
-/*********************
-|  Get the ATR Value |
-**********************/
-double CurrencyData::getAtr(int shift){
-   if(shift < ArraySize(atr_buffer)) return atr_buffer[shift];
-   else {
-      Print("Invalid shift value for ATR: ", shift);
-      return 0.0;
-   }
-}
+/**************************************************
+|         Refactor V2 - Manager Class             |
+|                TradeSystemManager               |
+***************************************************/
+class TradeSystemManager {
+private:
+    string symbol;
+    ulong ticket_number;
+    vector<Indicator*> indicators; // Vector to store indicators
+    Strategy* strategy; // Pointer to the current strategy
+    RiskManagement* riskManagement; // Pointer to the risk management strategy
+    VolatilityManagement* volatilityManagement; // Pointer to the volatility management strategy
 
-//****************
-// Get the Symbol|
-//****************
-string CurrencyData::getSymbol(){
-   return symbol;
-}
+public:
+    TradeSystemManager(string _sym, Strategy* _strategy, RiskManagement* _riskManagement, VolatilityManagement* _volatilityManagement) 
+    : symbol(_sym), strategy(_strategy), riskManagement(_riskManagement), volatilityManagement(_volatilityManagement) {
+        ticket_number = 0;
+    }
 
-//***************
-// Get Buy SSL  |
-//***************
-double CurrencyData::getBuySSL(int shift){
-   return buy_ssl_buffer[shift];
-}
+    ~TradeSystemManager() {
+        for (int i = 0; i < indicators.size(); i++) {
+            indicators[i]->release();
+            delete indicators[i];
+        }
+        delete strategy; // Clean up the strategy
+        delete riskManagement; // Clean up the risk management
+        delete volatilityManagement; // Clean up the volatility managem
+    }
 
-//***************
-// Get Sell SSL  |
-//***************
-double CurrencyData::getSellSSL(int shift){
-   return sell_ssl_buffer[shift];
-} 
+    void addIndicator(Indicator* indicator) {
+        indicators.push_back(indicator);
+    }
 
-/****************************
-|  Get Last Trade Direction |
-****************************/
-int CurrencyData::getLastTradeDirection(){
-   return last_trade_direction;
-}
+    void updateIndicators() {
+        for (int i = 0; i < indicators.size(); i++) {
+            indicators[i]->update();
+        }
+    }
+
+    void executeStrategy() {
+        if (volatilityManagement->isTradeAllowed()) {
+            double currentRiskExposure = riskManagement->calculateRiskExposure();
+            double availableRisk = MaxLossPrc - currentRiskExposure;
+            if (riskManagement->canProceedWithTrade(availableRisk)) {
+                strategy->execute();
+            } else {
+                Print("No available risk capacity. Skipping trade.");
+            }
+        } else {
+            Print("Trading not allowed due to volatility. Skipping execution.");
+        }
+    }
+
+    string getSymbol() {
+        return symbol;
+    }
+
+    ulong getTradeTicket() {
+        return ticket_number;
+    }
+    
+    void setTradeTicket(ulong ticket) {
+        ticket_number = ticket;
+    }
+};
 
 /******************************************************
 |  Order Execution Class                              |
@@ -446,7 +605,7 @@ int CurrencyData::getLastTradeDirection(){
 *******************************************************/
 class OrderExecutor {
 private:
-   CurrencyData *currencyData;
+   TradeSystemManager *tradeSystemManager;
    double optimalLotSize(string symbol, double price, double stop_loss);
 public:
    bool checkOpenOrders();
@@ -454,17 +613,17 @@ public:
    void updateLastTradeDirection();
    bool checkForContinuationTrade();
    void processTradeOpen(ENUM_ORDER_TYPE order_type, double current_atr, string current_symbol);
-   OrderExecutor(CurrencyData *curData);
+   OrderExecutor(TradeSystemManager *_tradeSystemManager);
 };
 
-OrderExecutor::OrderExecutor(CurrencyData *curData) : currencyData(curData) {}
+OrderExecutor::OrderExecutor(TradeSystemManager* _tradeSystemManager) : tradeSystemManager(_tradeSystemManager) {}
 
 /************************************|
 | Helper Method to check open orders |
 *************************************/
 bool OrderExecutor::checkOpenOrders(void){
    int total_orders = OrdersTotal();
-   int ticket_num = currencyData->getTradeTicket();
+   int ticket_num = tradeSystemManager->getTradeTicket();
    for(int i=0; i < total_orders; i++){
       ulong ticket = OrderGetTicket(i);
       if(OrderSelect(ticket) && OrderGetString(ORDER_SYMBOL) == symbol){
@@ -479,7 +638,7 @@ bool OrderExecutor::checkOpenOrders(void){
 //  Method to select and check the current position |
 //***************************************************
 bool OrderExecutor::checkPosition(){
-   int ticket_num = currencyData->getTradeTicket();
+   int ticket_num = tradeSystemManager->getTradeTicket();
    if(PositionSelect(symbol)){
       ulong position_ticket = PositionGetInteger(POSITION_TICKET);
       ticket_num = position_ticket;
@@ -493,7 +652,7 @@ bool OrderExecutor::checkPosition(){
 //***********************************
 void OrderExecutor::updateLastTradeDirection(){
    int total_history_orders = HistoryOrdersTotal();
-   int last_trade = currencyData->getLastTradeDirection();
+   int last_trade = tradeSystemManager->getLastTradeDirection();
    if(total_history_orders > 0){
       ulong last_order_ticket = HistoryOrderGetTicket(total_history_orders - 1);
       if(HistoryOrderSelect(last_order_ticket)){
@@ -516,9 +675,9 @@ bool OrderExecutor::checkForContinuationTrade(){
    double current_ygma = ygma_buffer[1]; //Bar that just closed
    double prior_gma = geo_buffer[0];
    double price = iClose(Symbol(), Period(), 1);
-   int last_trade = currencyData->getLastTradeDirection();
-   double sell_ssl = currencyData->getSellSSL(1); 
-   double buy_ssl = currencyData->getBuySSL(1);      
+   int last_trade = tradeSystemManager->getLastTradeDirection();
+   double sell_ssl = tradeSystemManager->getSellSSL(1); 
+   double buy_ssl = tradeSystemManager->getBuySSL(1);      
    // First Condition:
    //     Continuation LONG  if the last trade 1 was long and the Baseline never crossed short
    //     Continuation SHORT if the last trade -1 was short and the Baseline never crossed long
@@ -638,27 +797,14 @@ double OrderExecutor::optimalLotSize(string current_symbol, double entry_price, 
    return risk_lots;
 }
 
-
-// Array to hold currency data object 
-CurrencyData* currencies[];
-
-/****************************************************
-| Money Management Class                            |
-|  Manages position sizing and risk management      |
-|  Implements logic for calculating lot sizes based | 
-|  on account balance, risk per trade               |
-*****************************************************/
-
-
-
 /*Advice use inheritance to implement specific strategies
    and money management techniques. Use Polymorphism to 
    switch between different trading strategies and 
    money management techniques at run time.*/
 
 //Setup Variables
-input int                InpMagicNumber  = 2000001;     //Unique identifier for this expert advisor
-input string             InpTradeComment = __FILE__;    //Optional comment for trades
+input int InpMagicNumber  = 2000001;     //Unique identifier for this expert advisor
+input string InpTradeComment = __FILE__;    //Optional comment for trades
 input ENUM_APPLIED_PRICE InpAppliedPrice = PRICE_CLOSE; //Applied price for indicators
 //Setting Up Order Type
 input bool g_stop_order = false;
@@ -861,28 +1007,43 @@ int OnInit()
       
       //Initialize currencies object
       for(int i = 0; i < ArraySize(currency_pairs); i++){
-         // Initialize symbols
-         currencies[i] = new CurrencyData(currency_pairs[i]);
-         // Initialize indicator handles
-         // For this symbol 
-         currencies[i].initIndicatorHandles();
+         // Create indicators for each currency
+         ATRIndicator* atr = new ATRIndicator(currency_pairs[i], g_atr_period);
+         SSLIndicator* ssl = new SSLIndicator(currency_pairs[i]);
+         
+         // Initialize indicators
+         atr->init();
+         ssl->init();
+         
+         // Create a strategy using the indicators
+         SSLStrategy* strategy = new SSLStrategy(currencies[i], atr, ssl);
+
+         // Create TradeSystemManager and assign the strategy
+         currencies[i] = new TradeSystemManager(currency_pairs[i], strategy);
+         
+         // Add indicators to TradeSystemManager
+         currencies[i]->addIndicator(atr);
+         currencies[i]->addIndicator(ssl);
+         
       }
       
       return(INIT_SUCCEEDED);
   }
-//+------------------------------------------------------------------+
-//| Expert deinitialization function                                 |
-//+------------------------------------------------------------------+
-void OnDeinit(const int reason)
-  {
-      //TEMPLATE
-      //Remove indicator handle from Metatrader Cache
-      for (int i = 0; i < ArraySize(currencies); i++){
-         delete currencies[i];
-         currencies[i] = NULL;
-      }
-      Print("Handle Released");
-  }
+  
+
+// Helper function to create a trading system manager with specific indicators, strategy, risk, and volatility management
+TradeSystemManager* createTradeSystemManager(string symbol) {
+    TradeSystemManager* manager = new TradeSystemManager(
+        symbol,
+        new SSLStrategy(), // Strategy
+        new FixedPercentageRisk(0.02), // Risk Management
+        new NewsBasedVolatility(g_major_news_dates, ArraySize(g_major_news_dates)) // Volatility Management
+    );
+    manager->addIndicator(new ATRIndicator(symbol));
+    // Add other indicators as needed
+    return manager;
+}  
+
 //+------------------------------------------------------------------+
 //| Expert tick function                                             |
 //+------------------------------------------------------------------+
@@ -891,67 +1052,307 @@ void OnTick()
    //Quick check to see if trading is possible
    if (!isTradeAllowed()) return;
    
-   //Get the current date of the tick
-   datetime current_tick_date = TimeCurrent();
-   //Reset
-   g_volatility_switch = true;
-   
-   // Set Trading Switch based on Volatility day and Risk Exposure
-   if(isNoTradeDay(g_no_trade_periods, g_no_trade_period_count, current_tick_date)){
-      Print("Today is a no-trade day due to significant volatility");
-      g_volatility_switch = false; //Set No Trade Switch
-   } else {
-      g_volatility_switch = true; //Set Yes to Trade Switch
-      //Calculate current risk exposure
-      double current_risk_percentage = calculateCurrentRiskExposure();
-   
-      // Calculate available risk
-      double available_risk_percentage = MaxLossPrc - current_risk_percentage;
-      if(available_risk_percentage <= .005){
-         Print("No available risk capacity. Skipping trade.");
-         g_volatility_switch = false; 
-      }
-   }
-   
-   //Declare Variables     
-   TicksReceivedCount++; //Counts the number of ticks received
-   
-   
    // Start looping through the currency pairs and apply strategy to look for trades
-   for (int i = 0; i <= ArraySize(currencies); i++){  
-      OrderExecutor orderExecutor(&currencies[i]);     
-      //Checks for new candle
-      bool is_new_candle = false;
-      if(TimeLastTickProcessed != iTime(currencies[i].getSymbol(),PERIOD_D1,0))
-      {
-         is_new_candle = true;
-         TimeLastTickProcessed=iTime(currencies[i].getSymbol(),PERIOD_D1,0);
-      }
+   for (int i = 0; i < ArraySize(currencies); i++){ 
+      if(currencies[i] != NULL){
+         // Instantiate a trade system manager for each currency pair
+          TradeSystemManager* currencyManager = createTradeSystemManager(currencies[i]);
+          // Update indicators and execute the strategy
+          currencyManager->updateIndicators();
+          currencyManager->executeStrategy();
       
-      //If there is a new candle, process any trades
-      if(is_new_candle == true && g_volatility_switch == true)
-      {
-         //Output the date of the bar
-         datetime current_bar_time = iTime(currencies[i].getSymbol(), PERIOD_D1,0);
-         //Convert string to output
-         string time_str = TimeToString(current_bar_time, TIME_DATE | TIME_MINUTES);
-         Print("Current bar date and time: ", time_str);
-      
-         //Counts the number of ticks processed
-         TicksProcessedCount++;
+          // Clean up
+          delete currencyManager;
          
-         // Place the trade for long if SSL is long or short
-         if((orderExecutor.getBuySSL(0) != DBL_MAX) && (orderExecutor.getSellSSL(0) == DBL_MAX)){
-            if(g_stop_order) orderExecutor.processTradeOpen(ORDER_TYPE_BUY_STOP, currencies[i].getAtr(0), currencies[i].getSymbol());
-            else if(g_market_order) orderExecutor.processTradeOpen(ORDER_TYPE_BUY, currencies[i].getAtr(0), currencies[i].getSymbol());
-         } else if((currencies[i].getSellSSL(1) != DBL_MAX) && (currencies[i].getBuySSL(1) == DBL_MAX)){
-            if(g_stop_order) orderExecutor.processTradeOpen(ORDER_TYPE_SELL_STOP, currencies[i].getAtr(0), currencies[i].getSymbol());
-            else if(g_market_order) orderExecutor.processTradeOpen(ORDER_TYPE_SELL, currencies[i].getAtr(0), currencies[i].getSymbol());
+         //Checks for new candle
+         bool is_new_candle = false;
+         if(TimeLastTickProcessed != iTime(currencies[i].getSymbol(),PERIOD_D1,0))
+         {
+            is_new_candle = true;
+            TimeLastTickProcessed=iTime(currencies[i].getSymbol(),PERIOD_D1,0);
          }
+      
+         //If there is a new candle, process any trades
+         if(is_new_candle == true && g_volatility_switch == true)
+         {
+            //Output the date of the bar
+            datetime current_bar_time = iTime(currencies[i].getSymbol(), PERIOD_D1,0);
+            //Convert string to output
+            string time_str = TimeToString(current_bar_time, TIME_DATE | TIME_MINUTES);
+            Print("Current bar date and time: ", time_str);
          
-       }
+            //Counts the number of ticks processed
+            TicksProcessedCount++;
+            
+            // Update indicators
+            currencies[i]->updateIndicators();
+            
+            // Execute strategy
+            currencies[i]->executeStrategy();
+            
+          }
+      }
+   } 
+ } 
+/******************************************************************|
+// Class for the currency indicator data and position information  |
+//    Indicator Management Class                                   |
+//    Manages different indicators and provides interface to       |
+//    Abstract Base Class with Inheritance to functions            |
+*******************************************************************/
+/*
+class CurrencyData {
+   private:
+      string symbol;
+      ulong ticket_number;  // Trade Ticket Number
+      int    atr_handle;    // ATR
+      double atr_buffer[];  //[prior,current confirmed,not confirmed]
+      int    gma_handle;    //GMA
+      double geo_buffer[];
+      double ygma_buffer[];
+      int    ssl_handle;       //SSL
+      double sell_ssl_buffer[];
+      double buy_ssl_buffer[];
+      
+      int last_trade_direction; //1 for BUY, -1 for SELL, 0 for no direction
+      
+   /*
+      int ssl_handle; // SSL
+      string open_signal_ssl;
+      string g_ssl_name = ""; 
+   
+      int wae_handle;// WAE
+      string open_signal_wae;
+      string g_wae_name = "";
+   
+      int gma_handle;// GMA
+      string open_signal_gma;
+      string g_gma_name = "";
+   
+      int rvi_handle;// RVI
+      string open_signal_rvi;
+      string g_rvi_name = "";
+   
+      int g_order_type; // The Order Type
+      bool g_continuation = true; // For Continuation Trades
+      string g_continuation_trade = "na";
+      
+      
+    
+    public:
+       CurrencyData(string _sym);
+       ulong getTradeTicket();
+       void initIndicatorHandles();
+       void updateIndicators();
+       void releaseIndicatorHandles(); 
+       double getAtr(int shift);
+       string getSymbol();
+       double getBuySSL(int shift);
+       double getSellSSL(int shift);
+       int getLastTradeDirection();    
+};
+
+/*********************************
+|  class constructor |
+********************************
+CurrencyData::CurrencyData(string _sym){
+   symbol = _sym;
+   ticket_number = 0;
+   atr_handle = INVALID_HANDLE;
+   gma_handle = INVALID_HANDLE;
+   ssl_handle = INVALID_HANDLE;
+   ArraySetAsSeries(atr_buffer, true); // Treat array as series, most recent elements are placed at the beginning of the array index 0
+   ArraySetAsSeries(geo_buffer, true); // Treat array as series
+   ArraySetAsSeries(ygma_buffer, true); // Treat array as series
+   ArraySetAsSeries(sell_ssl_buffer, true); // Treat array as series
+   ArraySetAsSeries(buy_ssl_buffer, true); // Treat array as series
+   last_trade_direction = 0; // Initialize with no direction
+}
+
+//**************************************
+// Helper Method Retrieve Trade Ticket |
+//**************************************
+ulong CurrencyData::getTradeTicket(){
+   return ticket_number;
+}
+
+//**********************************            
+// Initialize Indicator Handles    |
+// In Object Oriented Programs,    |
+// The public members of a class   |
+// can access the private members  |
+//**********************************
+void CurrencyData::initIndicatorHandles(){
+   //********************
+   //|   ATR Handle     |
+   //********************
+   atr_handle = iATR(symbol,PERIOD_D1,g_atr_period);
+   Print("Handle for ATR /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+   //Error Handling
+   if(atr_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+   
+   /******************************
+   |      Baselines              |
+   ******************************
+   //********************
+   //|   GMA HANDLE     |
+   //********************
+   string g_gma_name = "Market\\YGMA.ex5";
+   gma_handle = iCustom(symbol, PERIOD_D1, g_gma_name,5,12);
+   Print("Handle for GMA /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+   //Error Handling
+   if(gma_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+         
+   //********************
+   //|   SSL Handle     |
+   //********************
+   string g_ssl_name = "Market\\ssl.ex5";
+   ssl_handle = iCustom(symbol,PERIOD_D1,g_ssl_name,13,true,0);
+   Print("Handle for SSL /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+   //Error Handling
+   if(ssl_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+         
+         /*
+         //********************
+         //|   WAE HANDLE     |
+         //********************
+         g_wae_name = "Market\\waddah_attar_explosion.ex5";
+         wae_handle = iCustom(symbol, PERIOD_D1, g_wae_name,20,40,20,2.0,150,400,15,150,false,2,false,false,false,false);
+         Print("Handle for WAE /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+         //Error Handling
+         if(wae_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+       
+         //********************
+         //|   RVI HANDLE     |
+         //********************
+         g_rvi_name = "Market\\rvi.ex5";
+         rvi_handle = iCustom(symbol, PERIOD_D1, g_rvi_name,10);
+         Print("Handle for RVI /", symbol," / ", EnumToString(PERIOD_D1),"successfully created");
+         //Error Handling
+         if(rvi_handle == INVALID_HANDLE) Print(__FUNCTION__, " > Handle is invalid...Check the name!");
+             */   
+//}
+
+/******************************|
+//Function to update indicators|
+******************************
+void CurrencyData::updateIndicators(){
+   //******************
+   //|      ATR       | 
+   //******************
+   if(atr_handle != INVALID_HANDLE){
+      //Set symbol string and indicator buffer
+      const int start_candle     = 0;
+      const int required_candles = 3; //How many candles are required to be stored in Expert 
+
+      //Indicator Variables and Buffers
+      const int index_atr        = 0; //ATR Value
+            
+      //Populate buffers for ATR Value; check errors
+      bool fill_atr = CopyBuffer(atr_handle,index_atr,start_candle,required_candles,atr_buffer); //Copy buffer uses oldest as 0 (reversed)
+      if(fill_atr==false) Print("Error creating ATR handle for symbol: ", symbol, " Error: ", GetLastError());
+
+             //Find ATR Value for Candle '1' Only
+             //double current_atr   = NormalizeDouble(atr_buffer[1],5);
     }
- }  
+    /***************************************
+    |       Baseline
+    ***************************************    
+    //******************
+    //|      GMA       | 
+    //******************
+    if(gma_handle != INVALID_HANDLE){
+      //Set symbol string and indicator buffers
+      const int start_candle      = 0;
+      const int required_candle  = 3; //How many candles are required to be stored in Expert
+   
+      bool fill_geo_gma = CopyBuffer(gma_handle,0,start_candle,required_candle,geo_buffer);
+      bool fill_ygma = CopyBuffer(gma_handle,1,start_candle,required_candle,ygma_buffer);
+      if(fill_geo_gma==false) Print("Error creating Geo GMA handle for symbol: ", symbol, " Error: ", GetLastError());
+      if(fill_ygma==false) Print("Error creating YGMA handle for symbol: ", symbol, " Error: ", GetLastError());
+    }
+    /****************************************
+    |    Confirmation 1
+    ****************************************
+    //******************
+    //|      SSL       | 
+    //******************
+    if(ssl_handle != INVALID_HANDLE){
+      //Set symbol string and indicator buffers
+      const int start_candle      = 0;
+      const int required_candle   = 2; //How many candles are required to be stored in Expert
+     
+      bool fill_sell_ssl = CopyBuffer(ssl_handle,3,start_candle,required_candle,sell_ssl_buffer);
+      bool fill_buy_ssl = CopyBuffer(ssl_handle,2,start_candle,required_candle,buy_ssl_buffer);
+      if(fill_sell_ssl == false) Print("Error creating sell SSL handle for symbol: ", symbol, " Error: ", GetLastError());
+      if(fill_buy_ssl == false) Print("Error creating buy SSL handle for symbol: ", symbol, " Error: ", GetLastError());
+    }
+}
+
+/*****************************
+|      Release Indicators    |
+***************************** 
+void CurrencyData::releaseIndicatorHandles(){
+   if (atr_handle != INVALID_HANDLE){
+      IndicatorRelease(atr_handle);
+      atr_handle = INVALID_HANDLE;
+   }
+}
+
+/*********************
+|  Get the ATR Value |
+*********************
+double CurrencyData::getAtr(int shift){
+   if(shift < ArraySize(atr_buffer)) return atr_buffer[shift];
+   else {
+      Print("Invalid shift value for ATR: ", shift);
+      return 0.0;
+   }
+}
+
+//****************
+// Get the Symbol|
+//****************
+string CurrencyData::getSymbol(){
+   return symbol;
+}
+
+//***************
+// Get Buy SSL  |
+//***************
+double CurrencyData::getBuySSL(int shift){
+   return buy_ssl_buffer[shift];
+}
+
+//***************
+// Get Sell SSL  |
+//***************
+double CurrencyData::getSellSSL(int shift){
+   return sell_ssl_buffer[shift];
+} 
+
+/****************************
+|  Get Last Trade Direction |
+***************************
+int CurrencyData::getLastTradeDirection(){
+   return last_trade_direction;
+}
+
+
+
+// Array to hold currency data object 
+CurrencyData* currencies[];
+
+/****************************************************
+| Money Management Class                            |
+|  Manages position sizing and risk management      |
+|  Implements logic for calculating lot sizes based | 
+|  on account balance, risk per trade               |
+*****************************************************/
+
+
+
+
          /*
          // A Continuation trade states that a trade has happened in the past and there
          // was no crossing of the base line. 
